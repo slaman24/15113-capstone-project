@@ -47,8 +47,11 @@ interface AuthContextValue {
     password: string,
     confirmPassword: string,
     role: Role,
+    avatar: string,
   ) => Promise<void>;
   logout: () => Promise<void>;
+  updateDisplayName: (name: string) => Promise<void>;
+  updateAvatar: (emoji: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -125,6 +128,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       password: string,
       confirmPassword: string,
       role: Role,
+      avatar: string,
     ) => {
       const trimmedUsername = username.trim();
       const trimmedPassword = password.trim();
@@ -165,6 +169,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         passwordHash,
         role,
         displayName: trimmedUsername,
+        avatar,
         createdAt: new Date().toISOString(),
       };
 
@@ -180,6 +185,52 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
+  const updateDisplayName = useCallback(
+    async (name: string) => {
+      const trimmed = name.trim();
+      if (!trimmed) throw new Error('Display name is required.');
+      if (trimmed.length > 30)
+        throw new Error('Display name must be 30 characters or fewer.');
+      let users: User[] | null;
+      try {
+        users = await getItem<User[]>(STORAGE_KEYS.USERS);
+      } catch {
+        throw new Error('Something went wrong. Please try again.');
+      }
+      const updated = (users ?? []).map((u) =>
+        u.id === user?.id ? { ...u, displayName: trimmed } : u,
+      );
+      try {
+        await setItem(STORAGE_KEYS.USERS, updated);
+      } catch {
+        throw new Error('Something went wrong. Please try again.');
+      }
+      setUser((prev) => (prev ? { ...prev, displayName: trimmed } : null));
+    },
+    [user],
+  );
+
+  const updateAvatar = useCallback(
+    async (emoji: string) => {
+      let users: User[] | null;
+      try {
+        users = await getItem<User[]>(STORAGE_KEYS.USERS);
+      } catch {
+        throw new Error('Something went wrong. Please try again.');
+      }
+      const updated = (users ?? []).map((u) =>
+        u.id === user?.id ? { ...u, avatar: emoji } : u,
+      );
+      try {
+        await setItem(STORAGE_KEYS.USERS, updated);
+      } catch {
+        throw new Error('Something went wrong. Please try again.');
+      }
+      setUser((prev) => (prev ? { ...prev, avatar: emoji } : null));
+    },
+    [user],
+  );
+
   const logout = useCallback(async () => {
     try {
       await removeItem(STORAGE_KEYS.SESSION);
@@ -190,7 +241,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, isLoading, login, register, logout, updateDisplayName, updateAvatar }}>
       {children}
     </AuthContext.Provider>
   );

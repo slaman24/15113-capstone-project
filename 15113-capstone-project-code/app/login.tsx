@@ -28,7 +28,7 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       await login(username, password);
-      // navigation is handled by app/index.tsx redirect after user state updates
+      router.replace('/');
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Something went wrong. Please try again.');
     } finally {
@@ -106,8 +106,8 @@ const styles = StyleSheet.create({
     backgroundColor: drip.white,
   },
   logo: {
-    width: 180,
-    height: 180,
+    width: 240,
+    height: 240,
     marginBottom: 16,
   },
   title: {

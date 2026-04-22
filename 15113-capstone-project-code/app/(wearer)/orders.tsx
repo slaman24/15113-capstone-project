@@ -1,10 +1,11 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   FlatList,
   Modal,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -12,7 +13,15 @@ import { useFocusEffect } from 'expo-router';
 import { useAuth } from '@/context/auth-context';
 import { drip } from '@/constants/theme';
 import { getItem, setItem, STORAGE_KEYS } from '@/lib/storage';
-import type { Order, OrderStatus } from '@/lib/types';
+import type { Order, OrderStatus, Review } from '@/lib/types';
+
+function generateId(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -46,7 +55,12 @@ export default function MyOrdersScreen() {
   const { user } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
   const [selected, setSelected] = useState<Order | null>(null);
+  const [reviews, setReviews] = useState<Review[]>([]);
   const [cancelError, setCancelError] = useState('');
+  const [reviewRating, setReviewRating] = useState(0);
+  const [reviewText, setReviewText] = useState('');
+  const [reviewSaving, setReviewSaving] = useState(false);
+  const [reviewError, setReviewError] = useState('');
 
   useFocusEffect(
     useCallback(() => {
@@ -55,14 +69,48 @@ export default function MyOrdersScreen() {
   );
 
   async function loadOrders() {
-    const all = (await getItem<Order[]>(STORAGE_KEYS.ORDERS)) ?? [];
-    const mine = all
+    const [all, allReviews] = await Promise.all([
+      getItem<Order[]>(STORAGE_KEYS.ORDERS),
+      getItem<Review[]>(STORAGE_KEYS.REVIEWS),
+    ]);
+    const mine = (all ?? [])
       .filter((o) => o.wearerId === user?.id)
       .sort(
         (a, b) =>
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
       );
     setOrders(mine);
+    setReviews(allReviews ?? []);
+  }
+
+  useEffect(() => {
+    setReviewRating(0);
+    setReviewText('');
+    setReviewError('');
+  }, [selected?.id]);
+
+  async function handleSubmitReview() {
+    if (!selected || reviewRating === 0 || !selected.washerId) return;
+    setReviewError('');
+    setReviewSaving(true);
+    try {
+      const allReviews = (await getItem<Review[]>(STORAGE_KEYS.REVIEWS)) ?? [];
+      const newReview: Review = {
+        id: generateId(),
+        orderId: selected.id,
+        wearerId: user!.id,
+        washerId: selected.washerId,
+        rating: reviewRating,
+        text: reviewText.trim(),
+        createdAt: new Date().toISOString(),
+      };
+      await setItem(STORAGE_KEYS.REVIEWS, [...allReviews, newReview]);
+      setReviews((prev) => [...prev, newReview]);
+    } catch {
+      setReviewError('Could not submit review. Please try again.');
+    } finally {
+      setReviewSaving(false);
+    }
   }
 
   async function handleCancel(order: Order) {
@@ -179,6 +227,69 @@ export default function MyOrdersScreen() {
                 <Text style={styles.cancelBtnText}>Cancel Order</Text>
               </TouchableOpacity>
             )}
+
+            {selected.status === 'done' && selected.washerId &&
+              (reviews.find((r) => r.orderId === selected.id)
+                ? (() => {
+                    const rev = reviews.find((r) => r.orderId === selected.id)!;
+                    return (
+                      <View style={styles.reviewSection}>
+                        <Text style={styles.modalSection}>Your Review</Text>
+                        <Text style={styles.starDisplay}>
+                          {'★'.repeat(rev.rating)}{'☆'.repeat(5 - rev.rating)}
+                        </Text>
+                        {rev.text ? (
+                          <Text style={styles.reviewTextDisplay}>{rev.text}</Text>
+                        ) : null}
+                      </View>
+                    );
+                  })()
+                : (
+                  <View style={styles.reviewSection}>
+                    <Text style={styles.modalSection}>Rate Your Washer</Text>
+                    <View style={styles.starRow}>
+                      {[1, 2, 3, 4, 5].map((n) => (
+                        <TouchableOpacity
+                          key={n}
+                          onPress={() => setReviewRating(n)}
+                          disabled={reviewSaving}
+                        >
+                          <Text style={styles.starOption}>
+                            {n <= reviewRating ? '★' : '☆'}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                    <TextInput
+                      style={styles.reviewInput}
+                      placeholder="Leave a comment (optional)"
+                      placeholderTextColor={drip.mutedText}
+                      value={reviewText}
+                      onChangeText={setReviewText}
+                      multiline
+                      maxLength={200}
+                      editable={!reviewSaving}
+                    />
+                    {reviewError ? (
+                      <Text style={styles.error}>{reviewError}</Text>
+                    ) : null}
+                    <TouchableOpacity
+                      style={[
+                        styles.reviewSubmitBtn,
+                        (reviewSaving || reviewRating === 0) && styles.btnDisabled,
+                      ]}
+                      onPress={handleSubmitReview}
+                      disabled={reviewSaving || reviewRating === 0}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.reviewSubmitText}>
+                        {reviewSaving ? 'Saving…' : 'Submit Review'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )
+              )
+            }
           </ScrollView>
         )}
       </Modal>
@@ -244,4 +355,54 @@ const styles = StyleSheet.create({
   },
   modalItem: { fontSize: 15, color: drip.darkText, marginBottom: 2 },
   modalDetail: { fontSize: 15, color: drip.darkText },
+  // Reviews
+  reviewSection: {
+    marginTop: 20,
+    paddingTop: 16,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: drip.lightAqua,
+  },
+  starRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  starOption: {
+    fontSize: 32,
+    color: drip.gold,
+  },
+  starDisplay: {
+    fontSize: 28,
+    color: drip.gold,
+    marginBottom: 6,
+  },
+  reviewInput: {
+    borderWidth: 1.5,
+    borderColor: drip.lightAqua,
+    borderRadius: 10,
+    padding: 12,
+    fontSize: 14,
+    color: drip.darkText,
+    backgroundColor: '#F9FAFB',
+    minHeight: 72,
+    textAlignVertical: 'top',
+    marginBottom: 10,
+  },
+  reviewTextDisplay: {
+    fontSize: 14,
+    color: drip.darkText,
+    marginTop: 4,
+  },
+  reviewSubmitBtn: {
+    backgroundColor: drip.teal,
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  btnDisabled: { opacity: 0.5 },
+  reviewSubmitText: {
+    color: drip.white,
+    fontWeight: '700',
+    fontSize: 14,
+  },
 });

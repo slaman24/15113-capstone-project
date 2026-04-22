@@ -5,6 +5,7 @@ export const STORAGE_KEYS = {
   ORDERS: 'drip_orders',
   SESSION: 'drip_session',
   SEEDED: 'drip_seeded',
+  REVIEWS: 'drip_reviews',
 } as const;
 
 export async function getItem<T>(key: string): Promise<T | null> {

@@ -22,6 +22,7 @@ export async function seedIfNeeded(): Promise<void> {
       passwordHash: hash1,
       role: 'wearer',
       displayName: 'Alex W.',
+      avatar: '👕',
       createdAt: now,
     },
     {
@@ -30,6 +31,7 @@ export async function seedIfNeeded(): Promise<void> {
       passwordHash: hash2,
       role: 'wearer',
       displayName: 'Jamie W.',
+      avatar: '👗',
       createdAt: now,
     },
     {
@@ -38,6 +40,7 @@ export async function seedIfNeeded(): Promise<void> {
       passwordHash: hash3,
       role: 'washer',
       displayName: 'Morgan',
+      avatar: '✨',
       createdAt: now,
     },
     {
@@ -46,6 +49,7 @@ export async function seedIfNeeded(): Promise<void> {
       passwordHash: hash4,
       role: 'washer',
       displayName: 'Riley',
+      avatar: '🧺',
       createdAt: now,
     },
   ];

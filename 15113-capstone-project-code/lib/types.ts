@@ -6,6 +6,17 @@ export interface User {
   passwordHash: string;
   role: Role;
   displayName: string;
+  avatar?: string;
+  createdAt: string;
+}
+
+export interface Review {
+  id: string;
+  orderId: string;
+  wearerId: string;
+  washerId: string;
+  rating: number;
+  text: string;
   createdAt: string;
 }
 

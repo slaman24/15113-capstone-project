@@ -15,6 +15,8 @@ import { useAuth } from '@/context/auth-context';
 import { drip } from '@/constants/theme';
 import type { Role } from '@/lib/types';
 
+const EMOJI_OPTIONS = ['👕', '👗', '🧦', '🧤', '🎩', '🧴', '🧺', '✨', '🌊', '🌿', '⭐', '😊'];
+
 export default function RegisterScreen() {
   const { register } = useAuth();
   const router = useRouter();
@@ -23,6 +25,7 @@ export default function RegisterScreen() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [role, setRole] = useState<Role>('wearer');
+  const [avatar, setAvatar] = useState(EMOJI_OPTIONS[0]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -30,8 +33,8 @@ export default function RegisterScreen() {
     setError('');
     setLoading(true);
     try {
-      await register(username, password, confirmPassword, role);
-      // navigation is handled by app/index.tsx redirect after user state updates
+      await register(username, password, confirmPassword, role, avatar);
+      router.replace('/');
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Something went wrong. Please try again.');
     } finally {
@@ -118,6 +121,24 @@ export default function RegisterScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Avatar picker */}
+        <Text style={styles.avatarLabel}>Choose an Avatar</Text>
+        <View style={styles.emojiGrid}>
+          {EMOJI_OPTIONS.map((emoji) => (
+            <TouchableOpacity
+              key={emoji}
+              style={[
+                styles.emojiOption,
+                emoji === avatar && styles.emojiSelected,
+              ]}
+              onPress={() => setAvatar(emoji)}
+              disabled={loading}
+            >
+              <Text style={styles.emojiText}>{emoji}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
         <TouchableOpacity
@@ -197,6 +218,35 @@ const styles = StyleSheet.create({
   pillTextActive: {
     color: drip.white,
   },
+  avatarLabel: {
+    alignSelf: 'flex-start',
+    fontSize: 15,
+    fontWeight: '600',
+    color: drip.darkText,
+    marginBottom: 10,
+  },
+  emojiGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 20,
+    alignSelf: 'flex-start',
+  },
+  emojiOption: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emojiSelected: {
+    borderColor: drip.teal,
+    backgroundColor: drip.lightAqua + '44',
+  },
+  emojiText: { fontSize: 22 },
   error: {
     color: drip.error,
     fontSize: 14,

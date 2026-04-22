@@ -56,6 +56,15 @@ export default function WearerLayout() {
           ),
         }}
       />
+      <Tabs.Screen
+        name="washers"
+        options={{
+          title: 'Washers',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="people-outline" size={size} color={color} />
+          ),
+        }}
+      />
     </Tabs>
   );
 }

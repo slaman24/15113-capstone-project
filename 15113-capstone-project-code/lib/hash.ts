@@ -1,8 +1,8 @@
-import * as Crypto from 'expo-crypto';
+import * as ExpoCrypto from 'expo-crypto';
 
 export async function hashPassword(password: string): Promise<string> {
-  return Crypto.digestStringAsync(
-    Crypto.CryptoDigestAlgorithm.SHA256,
+  return ExpoCrypto.digestStringAsync(
+    ExpoCrypto.CryptoDigestAlgorithm.SHA256,
     password,
   );
 }
