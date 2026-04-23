@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
+  Alert,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -10,9 +11,14 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { Asset } from 'expo-asset';
 import { useAuth } from '@/context/auth-context';
 import { drip } from '@/constants/theme';
+import { clearDatabase } from '@/lib/database';
+import { removeItem, STORAGE_KEYS } from '@/lib/storage';
+
+const LOGO = Asset.fromModule(require('@/assets/images/drip_logo.png'));
 
 export default function LoginScreen() {
   const { login } = useAuth();
@@ -22,6 +28,41 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [logoReady, setLogoReady] = useState(LOGO.downloaded);
+
+  useEffect(() => {
+    if (!LOGO.downloaded) {
+      LOGO.downloadAsync().then(() => setLogoReady(true));
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!LOGO.downloaded) {
+        LOGO.downloadAsync().then(() => setLogoReady(true));
+      } else {
+        setLogoReady(true);
+      }
+    }, []),
+  );
+
+  function confirmReset() {
+    Alert.alert(
+      'Reset Demo Data',
+      'This will permanently delete all accounts, orders, and reviews and restore the original demo data. Are you sure?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset',
+          style: 'destructive',
+          onPress: async () => {
+            clearDatabase();
+            await removeItem(STORAGE_KEYS.SESSION);
+          },
+        },
+      ],
+    );
+  }
 
   async function handleLogin() {
     setError('');
@@ -45,12 +86,13 @@ export default function LoginScreen() {
         contentContainerStyle={styles.container}
         keyboardShouldPersistTaps="handled"
       >
-        <Image
-          key="drip-logo"
-          source={require('@/assets/images/drip_logo.png')}
-          style={styles.logo}
-          resizeMode="contain"
-        />
+        {logoReady && (
+          <Image
+            source={{ uri: LOGO.localUri ?? LOGO.uri }}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+        )}
 
         <Text style={styles.title}>Welcome to Drip</Text>
 
@@ -91,6 +133,15 @@ export default function LoginScreen() {
           disabled={loading}
         >
           <Text style={styles.link}>Don't have an account? Create one</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.resetBtn}
+          onPress={confirmReset}
+          activeOpacity={0.7}
+          disabled={loading}
+        >
+          <Text style={styles.resetText}>Reset Demo Data</Text>
         </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -152,6 +203,14 @@ const styles = StyleSheet.create({
   link: {
     color: drip.darkTeal,
     fontSize: 15,
+    textDecorationLine: 'underline',
+  },
+  resetBtn: {
+    marginTop: 32,
+  },
+  resetText: {
+    color: drip.mutedText,
+    fontSize: 13,
     textDecorationLine: 'underline',
   },
 });
