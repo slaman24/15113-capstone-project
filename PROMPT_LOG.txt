@@ -1,0 +1,106 @@
+I used Gemini primarily for ideation and brainstorming. I then used GitHub Copilot (Claude Sonnet 4.6 model) for implementation using an agentic approach.
+
+Gemini:
+- I have a startup idea called Drip, a laundry service for college students using a peer-to-peer model similar to Uber. I am trying to think of fun names for the group of people who want their laundry done and the group of people who want to do laundry to earn profit. Any ideas?
+
+- Could you generate a fun logo for this startup?
+
+- I really like this one but could you make the letters all the same blue/white color
+
+- That looks great but could you keep the same navy blue border around the letters (same color as the outline for the water drop and baseball cap)
+
+
+During implementation, I ran into some challenges and felt that my best option was to start over completely. Below are my prompts for the 5 agents (all GitHub Copilot using Claude Sonnet 4.6 model) that were used to create my final implementation:
+
+Agent 1 (SPEC.md generation):
+- Hi there! For a capstone project, I would like to implement an app for the start-up Drip, a laundry service for college students that uses a peer-to-peer model. For the implementation, I would like to prioritize SIMPLICITY. One thing that is really important to include is that I want a local login system that prompts users for a username and password (or allows them to enter a new username and password). The passwords should not be easily discoverable. There should be two seperate interfaces for a Wearer (someone who wants their laundry done) and a Washer (someone who does the laundry). Accounts should have an associated role (Wearer or Washer) so the app knows what interface to display. To be able to demo the app, I will need some mock data. Could you please generate a SPEC.md file outlining the implementation for the Drip app? In SPEC.md, please outline required features, error handling, and acceptance criteria. I would also like drip_logo.png (located in the docs directory) to be incorporated into the app design
+
+
+Agent 2 (Implementation and debugging/additional features):
+- Read SPEC.md in this project. Implement the Drip app according to SPEC.md. This project currently contains a basic starter app, you can replace all of this code. Create all necessary files. Make sure error handling matches what the spec describes. After creating the files, verify that there are no errors.
+
+- I kept getting this error in my terminal, do you see what is going on?
+[Error: Cannot find native module 'ExpoCryptoAES']
+
+Code: hash.ts
+
+1 | import * as Crypto from 'expo-crypto';
+| ^
+2 |
+3 | export async function hashPassword(password: string): Promise<string> {
+4 | return Crypto.digestStringAsync(
+Call Stack
+<global> (lib/hash.ts:1)
+<global> (context/auth-context.tsx:8)
+<global> (app/_layout.tsx:3)
+
+- Ok I think this could be progress but I clicked the create account button and nothing happened. I then clicked it again and it said that the username was already taken. Maybe after you create an account you should be taken to the login screen?
+
+- I love this! The app works super well and I am very happy with it. I have four questions questions:
+
+Is there a way to fully clear the database so all accounts I have created are wiped?
+Would it be possible to give users the ability to change there display names?
+Would it be possible to make the Drip logo appear a bit bigger on the login welcome screen?
+Would it be possible for Wearers to view Washers and be able to see a star rating and reviews? It would also be super cool if a profile picture could appear too (we could just use emojis)?
+
+- I would like to make use of a database in my app. Could you give me some ideas for how I can do this. I also think that the wearer should have more customization options when placing there order, including temperature of water. I also think the pickup time should be a date/time selector and the wearer should specify a pickup location. On the washer side. They should be able to indicate when they have accepted an order, are in the process of completing an order, finished an order, dropped off an order. The wearer should be able to track their order (similar to the GrubHub interface)
+
+- Is there a way for me to see current usernames in the system? That could be helpful. And what about new users that I create?
+
+- This looks so great! I love all of the new features! Here are some things that I would like to change:
+
+I think there should only be four steps: Accepted, Picked Up, Washing, and Dropped Off (so Dropped Of can be marked with green)
+It would be great if little pops up came up on the Wearer and Washer screens to have them rate each other (were they on time for pick up and drop off, were they nice to work with, etc.) when the order is marked as Dropped Off
+Could there be little boxes to check if pickup and drop off date/time/location are the same --> that way the drop off fields could just automatically populate)
+
+- Could you please implement the above code changes. My apologies, I meant to be in Agent mode from the start but clicked Ask
+
+- This looks great! I'm really loving this so far! Some final features that I would like to add:
+
+On the Washers page, it would be great to order the My Jobs cards by status level, so the accepted at the top and so on. This could help washers stay organized if they have multiple orders at once
+The pop-up wored great on the Washers side but I did not see a pop-up for Wearers. I'm think that if a Wearer goes to the Orders page and there is a newly dropped of order, a pop-up will come up prompting them to rate their experience with their Washer (were the clothes returned in nice condition and washed well, was the washer on time for pickup and drop off, etc.)
+Please remove the washers tab from the Wearer page. Instead I want Wearers and Washer to be able to see their individual rating on their profile tab, and san see reviews/comments they have received
+For the money component, I don't actually want to implement a paying system. However, as a start I think that when the Wearer is putting together the order, a price should be calculated at the end that the Washer will see (so they know how much money they will receive for completeing an order). I also think that if the time between pickup and drop off is less than 12 hours, this should count as a speed order and the price should be $10 more (incentive for Washers), it would be great if you could show this in the total calculation
+
+
+Agent 3 (Clarifying questions about database and reseting demo data):
+- What will happen if I click reset app data. Because now that I have added some new features, the older orders don't match (for example, they don't have prices). Any suggestions for how I can handle this?
+
+- Will this though get rid of Alex and Jamie and Morgan? How is that mock data being loaded in and how is the database working here?
+
+
+Agent 4 (More debugging, chat was getting kind of muddied, so thought it would be best to use a new agent):
+- There are 2 small changes I want to make:
+
+When a Wearer submits a new order, I was wondering if it would be possible to have them be taken straight to the My Orders tab to see that they're new order is now in the list
+Could the order under My Orders be sorted by status, pending at the top, then accepted, etc.
+
+- So if I reset app data and then restart the server to Expo Go, the mock data will be repopulated?
+
+- One final change that I have: For both the Wearer and Washer profile views, could you get rid of the Reset App Data button and then move the Logout button below the reviews/rating section
+
+- I was wondering if this is an issue with the code or the drip_logo.png I am using but when I logout and am taken back to the login screen, the logo image is not there. Do you see a reason why this may be?
+
+- Yeah, let's add that safe fix!
+
+- The image still did not load after logging out
+
+- Unfortunately that did not work either. Is it an issue with the image? Also is there an easy way to reset the app data. I just want to start fresh for my demo
+
+- Yeah if you could add a small Reset Demo Data button to the login screen that would be great
+
+- Could expo-asset be a possible solution to the image loading issue?
+
+
+Agent 5 (Review):
+Review the Python code in this project against the spec in SPEC.md. For each item in the acceptance criteria, check whether the code
+actually implements it correctly. Also check for:
+
+Bugs or logic errors
+Missing error handling
+Code quality issues (unclear naming, repeated code, etc.)
+Security concerns (e.g., unsafe file handling)
+Format your review as a numbered list of findings, each marked as [PASS], [FAIL], or [WARN] and place your review in a new file called REVIEW.md. Be specific — reference file names and line numbers.
+
+
+
