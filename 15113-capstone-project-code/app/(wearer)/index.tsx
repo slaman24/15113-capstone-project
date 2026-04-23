@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { router } from 'expo-router';
 import { useAuth } from '@/context/auth-context';
 import { drip } from '@/constants/theme';
 import { createOrder } from '@/lib/database';
@@ -257,9 +258,8 @@ export default function PlaceOrderScreen() {
         updatedAt: now,
       };
       createOrder(newOrder);
-      const id = newOrder.id;
       reset();
-      setSuccessId(id);
+      router.push('/(wearer)/orders');
     } catch {
       setError('Could not place your order. Please try again.');
     } finally {
@@ -363,7 +363,7 @@ export default function PlaceOrderScreen() {
           <Text style={styles.sectionLabel}>Pickup Location</Text>
           <TextInput
             style={styles.input}
-            placeholder='e.g. "Room 204, Forbes Hall"'
+            placeholder='e.g. "Morewood Gardens Lobby"'
             placeholderTextColor={drip.mutedText}
             value={pickupLocation}
             onChangeText={setPickupLocation}
@@ -467,7 +467,7 @@ export default function PlaceOrderScreen() {
           />
           <TextInput
             style={[styles.input, { marginTop: 8 }]}
-            placeholder='e.g. "Room 204, Forbes Hall"'
+            placeholder='e.g. "Morewood Gardens Lobby"'
             placeholderTextColor={drip.mutedText}
             value={dropoffLocation}
             onChangeText={(text) => {

@@ -325,7 +325,12 @@ export default function MyOrdersScreen() {
         </View>
       ) : (
         <FlatList
-          data={orders}
+          data={[...orders].sort((a, b) => {
+            const rank: Record<string, number> = {
+              pending: 0, accepted: 1, picked_up: 2, washing: 3, dropped_off: 4, cancelled: 5,
+            };
+            return (rank[a.status] ?? 99) - (rank[b.status] ?? 99);
+          })}
           keyExtractor={(o) => o.id}
           renderItem={renderItem}
           contentContainerStyle={styles.list}
