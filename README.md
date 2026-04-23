@@ -6,6 +6,8 @@ The app can be run locally by cloning the repo, running npm install, and then np
 
 There are no API keys/secrets to handle.
 
+Demo video: https://drive.google.com/file/d/1wTZ4PT8mp_cXAchTZgj9Ccpll17GY_XE/view?usp=sharing
+
 # Welcome to your Expo app 👋
 
 This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
