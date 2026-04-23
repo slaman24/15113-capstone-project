@@ -9,7 +9,7 @@ import {
 import { useFocusEffect } from 'expo-router';
 import { useAuth } from '@/context/auth-context';
 import { drip } from '@/constants/theme';
-import { getItem, setItem, STORAGE_KEYS } from '@/lib/storage';
+import { getAllUsers, getOrdersByWasher, updateOrder } from '@/lib/database';
 import type { Order, OrderStatus, User } from '@/lib/types';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -18,8 +18,10 @@ function statusLabel(status: OrderStatus): string {
   switch (status) {
     case 'pending': return 'Pending';
     case 'accepted': return 'Accepted';
-    case 'in_progress': return 'In Progress';
+    case 'picked_up': return 'Picked Up';
+    case 'washing': return 'Washing';
     case 'done': return 'Done';
+    case 'dropped_off': return 'Dropped Off';
     case 'cancelled': return 'Cancelled';
   }
 }
@@ -28,14 +30,42 @@ function statusColor(status: OrderStatus): string {
   switch (status) {
     case 'pending': return '#9CA3AF';
     case 'accepted': return drip.teal;
-    case 'in_progress': return '#F59E0B';
+    case 'picked_up': return '#F59E0B';
+    case 'washing': return '#8B5CF6';
     case 'done': return drip.success;
+    case 'dropped_off': return drip.darkTeal;
     case 'cancelled': return drip.error;
   }
 }
 
 function itemsSummary(order: Order): string {
   return order.items.map((i) => `${i.quantity} ${i.label}`).join(', ');
+}
+
+function formatDateTime(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+    + ' at ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+}
+
+const TEMP_LABEL: Record<string, string> = { cold: '❄️ Cold', warm: '🌡️ Warm', hot: '🔥 Hot' };
+
+// ─── Next-status map ────────────────────────────────────────────────────────
+
+type ActionMap = {
+  nextStatus: OrderStatus;
+  label: string;
+  color: string;
+};
+
+function nextAction(status: OrderStatus): ActionMap | null {
+  switch (status) {
+    case 'accepted':   return { nextStatus: 'picked_up',   label: 'Mark Picked Up',   color: drip.teal };
+    case 'picked_up':  return { nextStatus: 'washing',     label: 'Start Washing',    color: '#8B5CF6' };
+    case 'washing':    return { nextStatus: 'done',        label: 'Mark Done',        color: drip.success };
+    case 'done':       return { nextStatus: 'dropped_off', label: 'Mark Dropped Off', color: drip.darkTeal };
+    default:           return null;
+  }
 }
 
 // ─── Component ──────────────────────────────────────────────────────────────
@@ -53,35 +83,29 @@ export default function MyJobsScreen() {
     }, [user]),
   );
 
-  async function loadJobs() {
-    const [all, users] = await Promise.all([
-      getItem<Order[]>(STORAGE_KEYS.ORDERS),
-      getItem<User[]>(STORAGE_KEYS.USERS),
-    ]);
-    const mine = (all ?? []).filter((o) => o.washerId === user?.id);
+  function loadJobs() {
+    if (!user) return;
+    const mine = getOrdersByWasher(user.id);
     setJobs(mine);
+    const users: User[] = getAllUsers();
     const names: Record<string, string> = {};
-    (users ?? []).forEach((u) => {
-      names[u.id] = u.displayName;
-    });
+    users.forEach((u) => { names[u.id] = u.displayName; });
     setWearerNames(names);
   }
 
-  async function updateStatus(order: Order, nextStatus: OrderStatus) {
+  function handleUpdateStatus(order: Order, nextStatus: OrderStatus) {
     setError('');
     setUpdatingId(order.id);
     try {
-      const all = (await getItem<Order[]>(STORAGE_KEYS.ORDERS)) ?? [];
       const now = new Date().toISOString();
-      const updated = all.map((o) =>
-        o.id === order.id ? { ...o, status: nextStatus, updatedAt: now } : o,
-      );
-      await setItem(STORAGE_KEYS.ORDERS, updated);
-      setJobs((prev) =>
-        prev.map((o) =>
-          o.id === order.id ? { ...o, status: nextStatus, updatedAt: now } : o,
-        ),
-      );
+      const updated: Order = {
+        ...order,
+        status: nextStatus,
+        statusTimestamps: { ...order.statusTimestamps, [nextStatus]: now },
+        updatedAt: now,
+      };
+      updateOrder(updated);
+      setJobs((prev) => prev.map((o) => (o.id === order.id ? updated : o)));
     } catch {
       setError('Could not update order status. Please try again.');
     } finally {
@@ -91,44 +115,34 @@ export default function MyJobsScreen() {
 
   function renderItem({ item }: { item: Order }) {
     const isUpdating = updatingId === item.id;
-    const color = statusColor(item.status);
+    const action = nextAction(item.status);
 
     return (
       <View style={styles.card}>
         <View style={styles.cardHeader}>
           <Text style={styles.orderId}>Order …{item.id.slice(-6)}</Text>
-          <View style={[styles.badge, { backgroundColor: color }]}>
+          <View style={[styles.badge, { backgroundColor: statusColor(item.status) }]}>
             <Text style={styles.badgeText}>{statusLabel(item.status)}</Text>
           </View>
         </View>
+
         <Text style={styles.wearer}>
           Wearer: {wearerNames[item.wearerId] ?? 'Unknown'}
         </Text>
         <Text style={styles.cardText}>{itemsSummary(item)}</Text>
-        <Text style={styles.cardMuted}>Pickup: {item.pickupTime}</Text>
+        <Text style={styles.cardMuted}>📅 {formatDateTime(item.pickupDateTime)}</Text>
+        <Text style={styles.cardMuted}>📍 {item.pickupLocation}</Text>
+        <Text style={styles.cardMuted}>{TEMP_LABEL[item.waterTemp] ?? item.waterTemp}</Text>
 
-        {item.status === 'accepted' && (
+        {action && (
           <TouchableOpacity
-            style={[styles.actionBtn, isUpdating && styles.btnDisabled]}
-            onPress={() => updateStatus(item, 'in_progress')}
+            style={[styles.actionBtn, { backgroundColor: action.color }, isUpdating && styles.btnDisabled]}
+            onPress={() => handleUpdateStatus(item, action.nextStatus)}
             disabled={isUpdating || updatingId !== null}
             activeOpacity={0.8}
           >
             <Text style={styles.actionBtnText}>
-              {isUpdating ? 'Updating…' : 'Mark Picked Up'}
-            </Text>
-          </TouchableOpacity>
-        )}
-
-        {item.status === 'in_progress' && (
-          <TouchableOpacity
-            style={[styles.actionBtn, styles.doneBtn, isUpdating && styles.btnDisabled]}
-            onPress={() => updateStatus(item, 'done')}
-            disabled={isUpdating || updatingId !== null}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.actionBtnText}>
-              {isUpdating ? 'Updating…' : 'Mark Done'}
+              {isUpdating ? 'Updating…' : action.label}
             </Text>
           </TouchableOpacity>
         )}
@@ -181,18 +195,17 @@ const styles = StyleSheet.create({
   badgeText: { color: drip.white, fontSize: 12, fontWeight: '600' },
   wearer: { color: drip.mutedText, fontSize: 13, marginBottom: 4 },
   cardText: { color: drip.darkText, fontSize: 14, marginBottom: 4 },
-  cardMuted: { color: drip.mutedText, fontSize: 13 },
+  cardMuted: { color: drip.mutedText, fontSize: 13, marginBottom: 2 },
   actionBtn: {
     marginTop: 12,
-    backgroundColor: drip.teal,
     borderRadius: 8,
     paddingVertical: 10,
     alignItems: 'center',
   },
-  doneBtn: { backgroundColor: drip.success },
   btnDisabled: { opacity: 0.5 },
   actionBtnText: { color: drip.white, fontWeight: '700', fontSize: 14 },
   error: { color: drip.error, padding: 16, fontSize: 14 },
   empty: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   emptyText: { color: drip.mutedText, fontSize: 16 },
 });
+

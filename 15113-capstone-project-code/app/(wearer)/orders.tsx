@@ -12,7 +12,13 @@ import {
 import { useFocusEffect } from 'expo-router';
 import { useAuth } from '@/context/auth-context';
 import { drip } from '@/constants/theme';
-import { getItem, setItem, STORAGE_KEYS } from '@/lib/storage';
+import {
+  createReview,
+  getAllUsers,
+  getOrdersByWearer,
+  getReviewByOrder,
+  updateOrder,
+} from '@/lib/database';
 import type { Order, OrderStatus, Review } from '@/lib/types';
 
 function generateId(): string {
@@ -25,23 +31,15 @@ function generateId(): string {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function statusLabel(status: OrderStatus): string {
-  switch (status) {
-    case 'pending': return 'Pending';
-    case 'accepted': return 'Accepted';
-    case 'in_progress': return 'In Progress';
-    case 'done': return 'Done';
-    case 'cancelled': return 'Cancelled';
-  }
-}
-
 function statusColor(status: OrderStatus): string {
   switch (status) {
-    case 'pending': return '#9CA3AF';
-    case 'accepted': return drip.teal;
-    case 'in_progress': return '#F59E0B';
-    case 'done': return drip.success;
-    case 'cancelled': return drip.error;
+    case 'pending':     return '#9CA3AF';
+    case 'accepted':    return drip.teal;
+    case 'picked_up':   return '#F59E0B';
+    case 'washing':     return '#8B5CF6';
+    case 'done':        return drip.success;
+    case 'dropped_off': return drip.darkTeal;
+    case 'cancelled':   return drip.error;
   }
 }
 
@@ -49,18 +47,116 @@ function itemsSummary(order: Order): string {
   return order.items.map((i) => `${i.quantity} ${i.label}`).join(', ');
 }
 
+function formatDateTime(iso: string): string {
+  const d = new Date(iso);
+  return (
+    d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) +
+    ' at ' +
+    d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+  );
+}
+
+const TEMP_LABEL: Record<string, string> = {
+  cold: '❄️ Cold',
+  warm: '🌡️ Warm',
+  hot: '🔥 Hot',
+};
+
+// ─── GrubHub-style status timeline ──────────────────────────────────────────
+
+type Step = { status: OrderStatus; label: string };
+
+const PIPELINE_STEPS: Step[] = [
+  { status: 'pending',     label: 'Order Placed' },
+  { status: 'accepted',    label: 'Accepted' },
+  { status: 'picked_up',   label: 'Picked Up' },
+  { status: 'washing',     label: 'Washing' },
+  { status: 'done',        label: 'Done' },
+  { status: 'dropped_off', label: 'Dropped Off' },
+];
+
+const STATUS_ORDER: Record<OrderStatus, number> = {
+  cancelled:   -1,
+  pending:      0,
+  accepted:     1,
+  picked_up:    2,
+  washing:      3,
+  done:         4,
+  dropped_off:  5,
+};
+
+function StatusTimeline({ order }: { order: Order }) {
+  if (order.status === 'cancelled') {
+    return (
+      <View style={tlStyles.cancelledBox}>
+        <Text style={tlStyles.cancelledText}>Order Cancelled</Text>
+      </View>
+    );
+  }
+
+  const currentIdx = STATUS_ORDER[order.status] ?? 0;
+
+  return (
+    <View style={tlStyles.container}>
+      {PIPELINE_STEPS.map((step, idx) => {
+        const reached = idx <= currentIdx;
+        const isCurrent = idx === currentIdx;
+        const ts = order.statusTimestamps[step.status];
+
+        return (
+          <View key={step.status} style={tlStyles.row}>
+            <View style={tlStyles.lineCol}>
+              {idx > 0 && (
+                <View style={[tlStyles.line, reached && tlStyles.lineActive]} />
+              )}
+            </View>
+            <View
+              style={[
+                tlStyles.circle,
+                reached && tlStyles.circleActive,
+                isCurrent && tlStyles.circleCurrent,
+              ]}
+            >
+              {reached && <View style={tlStyles.circleDot} />}
+            </View>
+            <View style={tlStyles.labelCol}>
+              <Text style={[tlStyles.stepLabel, reached && tlStyles.stepLabelActive]}>
+                {step.label}
+              </Text>
+              {ts && (
+                <Text style={tlStyles.stepTime}>
+                  {new Date(ts).toLocaleTimeString(undefined, {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                  {' · '}
+                  {new Date(ts).toLocaleDateString(undefined, {
+                    month: 'short',
+                    day: 'numeric',
+                  })}
+                </Text>
+              )}
+            </View>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
 // ─── Component ──────────────────────────────────────────────────────────────
 
 export default function MyOrdersScreen() {
   const { user } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
+  const [washerNames, setWasherNames] = useState<Record<string, string>>({});
   const [selected, setSelected] = useState<Order | null>(null);
-  const [reviews, setReviews] = useState<Review[]>([]);
   const [cancelError, setCancelError] = useState('');
   const [reviewRating, setReviewRating] = useState(0);
   const [reviewText, setReviewText] = useState('');
   const [reviewSaving, setReviewSaving] = useState(false);
   const [reviewError, setReviewError] = useState('');
+  const [existingReview, setExistingReview] = useState<Review | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -68,25 +164,27 @@ export default function MyOrdersScreen() {
     }, [user]),
   );
 
-  async function loadOrders() {
-    const [all, allReviews] = await Promise.all([
-      getItem<Order[]>(STORAGE_KEYS.ORDERS),
-      getItem<Review[]>(STORAGE_KEYS.REVIEWS),
-    ]);
-    const mine = (all ?? [])
-      .filter((o) => o.wearerId === user?.id)
-      .sort(
-        (a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-      );
+  function loadOrders() {
+    if (!user) return;
+    const mine = getOrdersByWearer(user.id);
     setOrders(mine);
-    setReviews(allReviews ?? []);
+    const users = getAllUsers();
+    const names: Record<string, string> = {};
+    users.forEach((u) => {
+      names[u.id] = u.displayName;
+    });
+    setWasherNames(names);
   }
 
   useEffect(() => {
     setReviewRating(0);
     setReviewText('');
     setReviewError('');
+    if (selected?.id) {
+      setExistingReview(getReviewByOrder(selected.id));
+    } else {
+      setExistingReview(null);
+    }
   }, [selected?.id]);
 
   async function handleSubmitReview() {
@@ -94,7 +192,6 @@ export default function MyOrdersScreen() {
     setReviewError('');
     setReviewSaving(true);
     try {
-      const allReviews = (await getItem<Review[]>(STORAGE_KEYS.REVIEWS)) ?? [];
       const newReview: Review = {
         id: generateId(),
         orderId: selected.id,
@@ -104,8 +201,8 @@ export default function MyOrdersScreen() {
         text: reviewText.trim(),
         createdAt: new Date().toISOString(),
       };
-      await setItem(STORAGE_KEYS.REVIEWS, [...allReviews, newReview]);
-      setReviews((prev) => [...prev, newReview]);
+      createReview(newReview);
+      setExistingReview(newReview);
     } catch {
       setReviewError('Could not submit review. Please try again.');
     } finally {
@@ -113,27 +210,19 @@ export default function MyOrdersScreen() {
     }
   }
 
-  async function handleCancel(order: Order) {
+  function handleCancel(order: Order) {
     setCancelError('');
     try {
-      const all = (await getItem<Order[]>(STORAGE_KEYS.ORDERS)) ?? [];
       const now = new Date().toISOString();
-      const updated = all.map((o) =>
-        o.id === order.id ? { ...o, status: 'cancelled' as OrderStatus, updatedAt: now } : o,
-      );
-      await setItem(STORAGE_KEYS.ORDERS, updated);
-      // Refresh both the list and the selected modal if open
-      const mine = updated
-        .filter((o) => o.wearerId === user?.id)
-        .sort(
-          (a, b) =>
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-        );
-      setOrders(mine);
-      if (selected?.id === order.id) {
-        const updatedSelected = updated.find((o) => o.id === order.id) ?? null;
-        setSelected(updatedSelected);
-      }
+      const updated: Order = {
+        ...order,
+        status: 'cancelled',
+        statusTimestamps: { ...order.statusTimestamps, cancelled: now },
+        updatedAt: now,
+      };
+      updateOrder(updated);
+      setOrders((prev) => prev.map((o) => (o.id === order.id ? updated : o)));
+      if (selected?.id === order.id) setSelected(updated);
     } catch {
       setCancelError('Could not update order status. Please try again.');
     }
@@ -141,16 +230,29 @@ export default function MyOrdersScreen() {
 
   function renderItem({ item }: { item: Order }) {
     const color = statusColor(item.status);
+    const labelMap: Partial<Record<OrderStatus, string>> = {
+      picked_up: 'Picked Up',
+      dropped_off: 'Dropped Off',
+    };
+    const label =
+      labelMap[item.status] ??
+      item.status.charAt(0).toUpperCase() + item.status.slice(1);
+
     return (
-      <TouchableOpacity style={styles.card} onPress={() => setSelected(item)} activeOpacity={0.8}>
+      <TouchableOpacity
+        style={styles.card}
+        onPress={() => setSelected(item)}
+        activeOpacity={0.8}
+      >
         <View style={styles.cardHeader}>
           <Text style={styles.orderId}>Order …{item.id.slice(-6)}</Text>
           <View style={[styles.badge, { backgroundColor: color }]}>
-            <Text style={styles.badgeText}>{statusLabel(item.status)}</Text>
+            <Text style={styles.badgeText}>{label}</Text>
           </View>
         </View>
         <Text style={styles.cardText}>{itemsSummary(item)}</Text>
-        <Text style={styles.cardMuted}>Pickup: {item.pickupTime}</Text>
+        <Text style={styles.cardMuted}>📅 {formatDateTime(item.pickupDateTime)}</Text>
+        <Text style={styles.cardMuted}>📍 {item.pickupLocation}</Text>
         {item.status === 'pending' && (
           <TouchableOpacity
             style={styles.cancelBtn}
@@ -197,10 +299,10 @@ export default function MyOrdersScreen() {
               </TouchableOpacity>
             </View>
 
-            <View style={[styles.badge, { backgroundColor: statusColor(selected.status), alignSelf: 'flex-start', marginBottom: 16 }]}>
-              <Text style={styles.badgeText}>{statusLabel(selected.status)}</Text>
-            </View>
+            {/* GrubHub-style tracker */}
+            <StatusTimeline order={selected} />
 
+            {/* Order details */}
             <Text style={styles.modalSection}>Items</Text>
             {selected.items.map((it) => (
               <Text key={it.label} style={styles.modalItem}>
@@ -208,8 +310,10 @@ export default function MyOrdersScreen() {
               </Text>
             ))}
 
-            <Text style={styles.modalSection}>Pickup Time</Text>
-            <Text style={styles.modalDetail}>{selected.pickupTime}</Text>
+            <Text style={styles.modalSection}>Pickup</Text>
+            <Text style={styles.modalDetail}>📅 {formatDateTime(selected.pickupDateTime)}</Text>
+            <Text style={styles.modalDetail}>📍 {selected.pickupLocation}</Text>
+            <Text style={styles.modalDetail}>{TEMP_LABEL[selected.waterTemp] ?? selected.waterTemp}</Text>
 
             {selected.notes ? (
               <>
@@ -217,6 +321,13 @@ export default function MyOrdersScreen() {
                 <Text style={styles.modalDetail}>{selected.notes}</Text>
               </>
             ) : null}
+
+            {selected.washerId && (
+              <>
+                <Text style={styles.modalSection}>Washer</Text>
+                <Text style={styles.modalDetail}>{washerNames[selected.washerId] ?? 'Unknown'}</Text>
+              </>
+            )}
 
             {selected.status === 'pending' && (
               <TouchableOpacity
@@ -228,74 +339,72 @@ export default function MyOrdersScreen() {
               </TouchableOpacity>
             )}
 
-            {selected.status === 'done' && selected.washerId &&
-              (reviews.find((r) => r.orderId === selected.id)
-                ? (() => {
-                    const rev = reviews.find((r) => r.orderId === selected.id)!;
-                    return (
-                      <View style={styles.reviewSection}>
-                        <Text style={styles.modalSection}>Your Review</Text>
-                        <Text style={styles.starDisplay}>
-                          {'★'.repeat(rev.rating)}{'☆'.repeat(5 - rev.rating)}
+            {/* Review section — only after dropped_off */}
+            {selected.status === 'dropped_off' &&
+              selected.washerId &&
+              (existingReview ? (
+                <View style={styles.reviewSection}>
+                  <Text style={styles.modalSection}>Your Review</Text>
+                  <Text style={styles.starDisplay}>
+                    {'★'.repeat(existingReview.rating)}
+                    {'☆'.repeat(5 - existingReview.rating)}
+                  </Text>
+                  {existingReview.text ? (
+                    <Text style={styles.reviewTextDisplay}>{existingReview.text}</Text>
+                  ) : null}
+                </View>
+              ) : (
+                <View style={styles.reviewSection}>
+                  <Text style={styles.modalSection}>Rate Your Washer</Text>
+                  <View style={styles.starRow}>
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <TouchableOpacity
+                        key={n}
+                        onPress={() => setReviewRating(n)}
+                        disabled={reviewSaving}
+                      >
+                        <Text style={styles.starOption}>
+                          {n <= reviewRating ? '★' : '☆'}
                         </Text>
-                        {rev.text ? (
-                          <Text style={styles.reviewTextDisplay}>{rev.text}</Text>
-                        ) : null}
-                      </View>
-                    );
-                  })()
-                : (
-                  <View style={styles.reviewSection}>
-                    <Text style={styles.modalSection}>Rate Your Washer</Text>
-                    <View style={styles.starRow}>
-                      {[1, 2, 3, 4, 5].map((n) => (
-                        <TouchableOpacity
-                          key={n}
-                          onPress={() => setReviewRating(n)}
-                          disabled={reviewSaving}
-                        >
-                          <Text style={styles.starOption}>
-                            {n <= reviewRating ? '★' : '☆'}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                    <TextInput
-                      style={styles.reviewInput}
-                      placeholder="Leave a comment (optional)"
-                      placeholderTextColor={drip.mutedText}
-                      value={reviewText}
-                      onChangeText={setReviewText}
-                      multiline
-                      maxLength={200}
-                      editable={!reviewSaving}
-                    />
-                    {reviewError ? (
-                      <Text style={styles.error}>{reviewError}</Text>
-                    ) : null}
-                    <TouchableOpacity
-                      style={[
-                        styles.reviewSubmitBtn,
-                        (reviewSaving || reviewRating === 0) && styles.btnDisabled,
-                      ]}
-                      onPress={handleSubmitReview}
-                      disabled={reviewSaving || reviewRating === 0}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={styles.reviewSubmitText}>
-                        {reviewSaving ? 'Saving…' : 'Submit Review'}
-                      </Text>
-                    </TouchableOpacity>
+                      </TouchableOpacity>
+                    ))}
                   </View>
-                )
-              )
-            }
+                  <TextInput
+                    style={styles.reviewInput}
+                    placeholder="Leave a comment (optional)"
+                    placeholderTextColor={drip.mutedText}
+                    value={reviewText}
+                    onChangeText={setReviewText}
+                    multiline
+                    maxLength={200}
+                    editable={!reviewSaving}
+                  />
+                  {reviewError ? (
+                    <Text style={styles.error}>{reviewError}</Text>
+                  ) : null}
+                  <TouchableOpacity
+                    style={[
+                      styles.reviewSubmitBtn,
+                      (reviewSaving || reviewRating === 0) && styles.btnDisabled,
+                    ]}
+                    onPress={handleSubmitReview}
+                    disabled={reviewSaving || reviewRating === 0}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.reviewSubmitText}>
+                      {reviewSaving ? 'Saving…' : 'Submit Review'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
           </ScrollView>
         )}
       </Modal>
     </View>
   );
 }
+
+// ─── Styles ──────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: drip.white },
@@ -315,14 +424,10 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   orderId: { fontWeight: '700', fontSize: 15, color: drip.darkText },
-  badge: {
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
+  badge: { borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4 },
   badgeText: { color: drip.white, fontSize: 12, fontWeight: '600' },
   cardText: { color: drip.darkText, fontSize: 14, marginBottom: 4 },
-  cardMuted: { color: drip.mutedText, fontSize: 13 },
+  cardMuted: { color: drip.mutedText, fontSize: 13, marginBottom: 2 },
   cancelBtn: {
     marginTop: 12,
     borderWidth: 1.5,
@@ -332,10 +437,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   cancelBtnText: { color: drip.error, fontWeight: '600', fontSize: 14 },
-  error: { color: drip.error, padding: 16, fontSize: 14 },
+  error: { color: drip.error, fontSize: 14, marginBottom: 4 },
   empty: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   emptyText: { color: drip.mutedText, fontSize: 16 },
-  // Modal
   modal: { padding: 24 },
   modalHeader: {
     flexDirection: 'row',
@@ -354,28 +458,16 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   modalItem: { fontSize: 15, color: drip.darkText, marginBottom: 2 },
-  modalDetail: { fontSize: 15, color: drip.darkText },
-  // Reviews
+  modalDetail: { fontSize: 15, color: drip.darkText, marginBottom: 2 },
   reviewSection: {
     marginTop: 20,
     paddingTop: 16,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: drip.lightAqua,
   },
-  starRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 12,
-  },
-  starOption: {
-    fontSize: 32,
-    color: drip.gold,
-  },
-  starDisplay: {
-    fontSize: 28,
-    color: drip.gold,
-    marginBottom: 6,
-  },
+  starRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  starOption: { fontSize: 32, color: drip.gold },
+  starDisplay: { fontSize: 28, color: drip.gold, marginBottom: 6 },
   reviewInput: {
     borderWidth: 1.5,
     borderColor: drip.lightAqua,
@@ -388,11 +480,7 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
     marginBottom: 10,
   },
-  reviewTextDisplay: {
-    fontSize: 14,
-    color: drip.darkText,
-    marginTop: 4,
-  },
+  reviewTextDisplay: { fontSize: 14, color: drip.darkText, marginTop: 4 },
   reviewSubmitBtn: {
     backgroundColor: drip.teal,
     borderRadius: 8,
@@ -400,9 +488,41 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   btnDisabled: { opacity: 0.5 },
-  reviewSubmitText: {
-    color: drip.white,
-    fontWeight: '700',
-    fontSize: 14,
+  reviewSubmitText: { color: drip.white, fontWeight: '700', fontSize: 14 },
+});
+
+// ─── Timeline styles ─────────────────────────────────────────────────────────
+
+const tlStyles = StyleSheet.create({
+  container: { marginBottom: 8 },
+  row: { flexDirection: 'row', alignItems: 'flex-start', minHeight: 44 },
+  lineCol: { width: 24, alignItems: 'center' },
+  line: { width: 2, height: 24, backgroundColor: '#D1D5DB' },
+  lineActive: { backgroundColor: drip.teal },
+  circle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: '#D1D5DB',
+    backgroundColor: drip.white,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 2,
   },
+  circleActive: { borderColor: drip.teal },
+  circleCurrent: { borderColor: drip.teal, backgroundColor: drip.teal },
+  circleDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: drip.white },
+  labelCol: { flex: 1, paddingLeft: 10, paddingBottom: 12 },
+  stepLabel: { fontSize: 15, color: '#9CA3AF', fontWeight: '500' },
+  stepLabelActive: { color: drip.darkText, fontWeight: '600' },
+  stepTime: { fontSize: 12, color: drip.mutedText, marginTop: 2 },
+  cancelledBox: {
+    backgroundColor: '#FEE2E2',
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 12,
+    alignItems: 'center',
+  },
+  cancelledText: { color: drip.error, fontWeight: '700', fontSize: 15 },
 });

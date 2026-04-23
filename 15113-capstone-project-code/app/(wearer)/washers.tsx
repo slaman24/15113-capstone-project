@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { drip } from '@/constants/theme';
-import { getItem, STORAGE_KEYS } from '@/lib/storage';
+import { getAllReviews, getAllUsers } from '@/lib/database';
 import type { Review, User } from '@/lib/types';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -47,15 +47,13 @@ export default function WashersScreen() {
     }, []),
   );
 
-  async function load() {
-    const [users, allReviews] = await Promise.all([
-      getItem<User[]>(STORAGE_KEYS.USERS),
-      getItem<Review[]>(STORAGE_KEYS.REVIEWS),
-    ]);
-    setWashers((users ?? []).filter((u) => u.role === 'washer'));
-    setReviews(allReviews ?? []);
+  function load() {
+    const users = getAllUsers();
+    const allReviews = getAllReviews();
+    setWashers(users.filter((u) => u.role === 'washer'));
+    setReviews(allReviews);
     const names: Record<string, string> = {};
-    (users ?? []).forEach((u) => {
+    users.forEach((u) => {
       names[u.id] = u.displayName;
     });
     setWearerNames(names);

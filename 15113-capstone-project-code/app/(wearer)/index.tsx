@@ -9,12 +9,18 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useAuth } from '@/context/auth-context';
 import { drip } from '@/constants/theme';
-import { getItem, setItem, STORAGE_KEYS } from '@/lib/storage';
-import type { LaundryItem, Order } from '@/lib/types';
+import { createOrder } from '@/lib/database';
+import type { LaundryItem, Order, WaterTemp } from '@/lib/types';
 
 const ITEM_LABELS = ['Shirts', 'Pants', 'Socks', 'Towels', 'Bedding', 'Other'] as const;
+const WATER_TEMPS: { value: WaterTemp; label: string }[] = [
+  { value: 'cold', label: '❄️  Cold' },
+  { value: 'warm', label: '🌡️  Warm' },
+  { value: 'hot', label: '🔥  Hot' },
+];
 
 type QuantityMap = Record<string, number>;
 
@@ -26,11 +32,27 @@ function generateId(): string {
   });
 }
 
+function formatDateTime(d: Date): string {
+  return d.toLocaleDateString(undefined, {
+    weekday: 'short', month: 'short', day: 'numeric',
+  }) + ' at ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+}
+
 export default function PlaceOrderScreen() {
   const { user } = useAuth();
 
   const [quantities, setQuantities] = useState<QuantityMap>({});
-  const [pickupTime, setPickupTime] = useState('');
+  const [pickupDate, setPickupDate] = useState<Date>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    d.setMinutes(0, 0, 0);
+    return d;
+  });
+  // Android needs two-step picker: first date, then time
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [pickerMode, setPickerMode] = useState<'date' | 'time'>('date');
+  const [pickupLocation, setPickupLocation] = useState('');
+  const [waterTemp, setWaterTemp] = useState<WaterTemp>('cold');
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -45,10 +67,45 @@ export default function PlaceOrderScreen() {
 
   function reset() {
     setQuantities({});
-    setPickupTime('');
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    d.setMinutes(0, 0, 0);
+    setPickupDate(d);
+    setPickupLocation('');
+    setWaterTemp('cold');
     setNotes('');
     setError('');
     setSuccessId(null);
+  }
+
+  function openPicker() {
+    setPickerMode('date');
+    setShowDatePicker(true);
+  }
+
+  function onDateChange(event: DateTimePickerEvent, selected?: Date) {
+    if (event.type === 'dismissed') {
+      setShowDatePicker(false);
+      return;
+    }
+    const d = selected ?? pickupDate;
+    if (Platform.OS === 'android') {
+      if (pickerMode === 'date') {
+        // Keep same time, update just date
+        const updated = new Date(pickupDate);
+        updated.setFullYear(d.getFullYear(), d.getMonth(), d.getDate());
+        setPickupDate(updated);
+        setPickerMode('time');
+        // Stay open for time selection
+      } else {
+        const updated = new Date(pickupDate);
+        updated.setHours(d.getHours(), d.getMinutes(), 0, 0);
+        setPickupDate(updated);
+        setShowDatePicker(false);
+      }
+    } else {
+      setPickupDate(d);
+    }
   }
 
   const selectedItems: LaundryItem[] = ITEM_LABELS.filter(
@@ -65,8 +122,8 @@ export default function PlaceOrderScreen() {
       setError('Please add at least one item to your order.');
       return;
     }
-    if (!pickupTime.trim()) {
-      setError('Please enter a pickup time.');
+    if (!pickupLocation.trim()) {
+      setError('Please enter a pickup location.');
       return;
     }
     if (notes.length > 200) {
@@ -76,24 +133,25 @@ export default function PlaceOrderScreen() {
 
     setLoading(true);
     try {
-      const orders = (await getItem<Order[]>(STORAGE_KEYS.ORDERS)) ?? [];
       const now = new Date().toISOString();
       const newOrder: Order = {
         id: generateId(),
         wearerId: user!.id,
         washerId: null,
         items: selectedItems,
-        pickupTime: pickupTime.trim(),
+        pickupDateTime: pickupDate.toISOString(),
+        pickupLocation: pickupLocation.trim(),
+        waterTemp,
         notes: notes.trim(),
         status: 'pending',
+        statusTimestamps: { pending: now },
         createdAt: now,
         updatedAt: now,
       };
-      await setItem(STORAGE_KEYS.ORDERS, [...orders, newOrder]);
+      createOrder(newOrder);
       setSuccessId(newOrder.id);
-      setQuantities({});
-      setPickupTime('');
-      setNotes('');
+      reset();
+      setSuccessId(newOrder.id); // restore after reset clears it
     } catch {
       setError('Could not place your order. Please try again.');
     } finally {
@@ -114,7 +172,7 @@ export default function PlaceOrderScreen() {
             <Text style={styles.successText}>
               Order placed! ID: …{successId.slice(-6)}
             </Text>
-            <TouchableOpacity onPress={reset}>
+            <TouchableOpacity onPress={() => setSuccessId(null)}>
               <Text style={styles.successLink}>Place another order</Text>
             </TouchableOpacity>
           </View>
@@ -147,17 +205,60 @@ export default function PlaceOrderScreen() {
           ))}
         </View>
 
-        {/* Pickup time */}
+        {/* Pickup date/time */}
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Pickup Time</Text>
+          <Text style={styles.sectionLabel}>Pickup Date & Time</Text>
+          <TouchableOpacity
+            style={styles.dateBtn}
+            onPress={openPicker}
+            disabled={loading}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.dateBtnText}>📅  {formatDateTime(pickupDate)}</Text>
+          </TouchableOpacity>
+          {(showDatePicker) && (
+            <DateTimePicker
+              value={pickupDate}
+              mode={pickerMode}
+              display={Platform.OS === 'ios' ? 'inline' : 'default'}
+              minimumDate={new Date()}
+              onChange={onDateChange}
+            />
+          )}
+        </View>
+
+        {/* Pickup location */}
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>Pickup Location</Text>
           <TextInput
             style={styles.input}
-            placeholder='e.g. "Tomorrow 10am"'
+            placeholder='e.g. "Room 204, Forbes Hall"'
             placeholderTextColor={drip.mutedText}
-            value={pickupTime}
-            onChangeText={setPickupTime}
+            value={pickupLocation}
+            onChangeText={setPickupLocation}
             editable={!loading}
+            returnKeyType="done"
           />
+        </View>
+
+        {/* Water temperature */}
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>Water Temperature</Text>
+          <View style={styles.chipRow}>
+            {WATER_TEMPS.map(({ value, label }) => (
+              <TouchableOpacity
+                key={value}
+                style={[styles.chip, waterTemp === value && styles.chipSelected]}
+                onPress={() => setWaterTemp(value)}
+                disabled={loading}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.chipText, waterTemp === value && styles.chipTextSelected]}>
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
 
         {/* Notes */}
@@ -172,7 +273,7 @@ export default function PlaceOrderScreen() {
             value={notes}
             onChangeText={setNotes}
             editable={!loading}
-            maxLength={201} // let validation fire, not hard-cut silently
+            maxLength={201}
           />
           <Text style={styles.charCount}>{notes.length}/200</Text>
         </View>
@@ -243,6 +344,27 @@ const styles = StyleSheet.create({
   },
   counterBtnText: { fontSize: 20, color: drip.darkTeal, lineHeight: 22 },
   counterValue: { fontSize: 16, fontWeight: '600', color: drip.darkText, minWidth: 20, textAlign: 'center' },
+  dateBtn: {
+    borderWidth: 1.5,
+    borderColor: drip.lightAqua,
+    borderRadius: 10,
+    padding: 13,
+    backgroundColor: '#F9FAFB',
+  },
+  dateBtnText: { fontSize: 15, color: drip.darkText },
+  chipRow: { flexDirection: 'row', gap: 10 },
+  chip: {
+    flex: 1,
+    borderWidth: 1.5,
+    borderColor: drip.lightAqua,
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+  },
+  chipSelected: { backgroundColor: drip.teal, borderColor: drip.teal },
+  chipText: { fontSize: 14, fontWeight: '600', color: drip.darkText },
+  chipTextSelected: { color: drip.white },
   input: {
     borderWidth: 1.5,
     borderColor: drip.lightAqua,
@@ -265,3 +387,4 @@ const styles = StyleSheet.create({
   buttonDisabled: { opacity: 0.5 },
   buttonText: { color: drip.white, fontSize: 17, fontWeight: '700' },
 });
+

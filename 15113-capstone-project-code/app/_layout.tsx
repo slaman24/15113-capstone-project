@@ -1,6 +1,9 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { AuthProvider } from '@/context/auth-context';
+import { initDatabase } from '@/lib/database';
+
+initDatabase();
 
 export default function RootLayout() {
   return (

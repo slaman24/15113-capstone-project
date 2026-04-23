@@ -1,11 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export const STORAGE_KEYS = {
-  USERS: 'drip_users',
-  ORDERS: 'drip_orders',
   SESSION: 'drip_session',
-  SEEDED: 'drip_seeded',
-  REVIEWS: 'drip_reviews',
 } as const;
 
 export async function getItem<T>(key: string): Promise<T | null> {

@@ -23,9 +23,13 @@ export interface Review {
 export type OrderStatus =
   | 'pending'
   | 'accepted'
-  | 'in_progress'
+  | 'picked_up'
+  | 'washing'
   | 'done'
+  | 'dropped_off'
   | 'cancelled';
+
+export type WaterTemp = 'cold' | 'warm' | 'hot';
 
 export interface LaundryItem {
   label: string;
@@ -37,9 +41,12 @@ export interface Order {
   wearerId: string;
   washerId: string | null;
   items: LaundryItem[];
-  pickupTime: string;
+  pickupDateTime: string;
+  pickupLocation: string;
+  waterTemp: WaterTemp;
   notes: string;
   status: OrderStatus;
+  statusTimestamps: Partial<Record<OrderStatus, string>>;
   createdAt: string;
   updatedAt: string;
 }

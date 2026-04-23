@@ -8,9 +8,10 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '@/context/auth-context';
 import { drip } from '@/constants/theme';
+import { clearDatabase } from '@/lib/database';
+import { removeItem, STORAGE_KEYS } from '@/lib/storage';
 
 const EMOJI_OPTIONS = ['👕', '👗', '🧦', '🧤', '🎩', '🧴', '🧺', '✨', '🌊', '🌿', '⭐', '😊'];
 
@@ -57,13 +58,8 @@ export default function WearerProfileScreen() {
           text: 'Reset',
           style: 'destructive',
           onPress: async () => {
-            await AsyncStorage.multiRemove([
-              'drip_users',
-              'drip_orders',
-              'drip_session',
-              'drip_seeded',
-              'drip_reviews',
-            ]);
+            clearDatabase();
+            await removeItem(STORAGE_KEYS.SESSION);
             await logout();
           },
         },

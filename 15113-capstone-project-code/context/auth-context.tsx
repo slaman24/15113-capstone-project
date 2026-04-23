@@ -8,6 +8,13 @@ import React, {
 import { hashPassword } from '@/lib/hash';
 import { getItem, setItem, removeItem, STORAGE_KEYS } from '@/lib/storage';
 import { seedIfNeeded } from '@/lib/seed';
+import {
+  createUser,
+  getUserById,
+  getUserByUsername,
+  updateUser,
+  usernameExists,
+} from '@/lib/database';
 import type { Role, User } from '@/lib/types';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -70,8 +77,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await seedIfNeeded();
         const sessionId = await getItem<string>(STORAGE_KEYS.SESSION);
         if (sessionId) {
-          const users = await getItem<User[]>(STORAGE_KEYS.USERS);
-          const found = users?.find((u) => u.id === sessionId) ?? null;
+          const found = getUserById(sessionId);
           if (!cancelled) setUser(found);
         }
       } catch {
@@ -97,16 +103,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const passwordError = validatePassword(trimmedPassword);
     if (passwordError) throw new Error(passwordError);
 
-    let users: User[] | null;
+    let found: User | null;
     try {
-      users = await getItem<User[]>(STORAGE_KEYS.USERS);
+      found = getUserByUsername(trimmedUsername);
     } catch {
       throw new Error('Something went wrong. Please try again.');
     }
 
-    const found = (users ?? []).find(
-      (u) => u.username.toLowerCase() === trimmedUsername.toLowerCase(),
-    );
     if (!found) throw new Error('Incorrect username or password.');
 
     const hash = await hashPassword(trimmedPassword);
@@ -146,17 +149,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (trimmedPassword !== trimmedConfirm)
         throw new Error('Passwords do not match.');
 
-      let users: User[] | null;
+      let taken: boolean;
       try {
-        users = await getItem<User[]>(STORAGE_KEYS.USERS);
+        taken = usernameExists(trimmedUsername);
       } catch {
         throw new Error('Something went wrong. Please try again.');
       }
 
-      const existing = (users ?? []).find(
-        (u) => u.username.toLowerCase() === trimmedUsername.toLowerCase(),
-      );
-      if (existing)
+      if (taken)
         throw new Error(
           'That username is already taken. Please choose another.',
         );
@@ -174,7 +174,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       };
 
       try {
-        await setItem(STORAGE_KEYS.USERS, [...(users ?? []), newUser]);
+        createUser(newUser);
         await setItem(STORAGE_KEYS.SESSION, newUser.id);
       } catch {
         throw new Error('Something went wrong. Please try again.');
@@ -191,17 +191,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!trimmed) throw new Error('Display name is required.');
       if (trimmed.length > 30)
         throw new Error('Display name must be 30 characters or fewer.');
-      let users: User[] | null;
+      if (!user) throw new Error('Not logged in.');
       try {
-        users = await getItem<User[]>(STORAGE_KEYS.USERS);
-      } catch {
-        throw new Error('Something went wrong. Please try again.');
-      }
-      const updated = (users ?? []).map((u) =>
-        u.id === user?.id ? { ...u, displayName: trimmed } : u,
-      );
-      try {
-        await setItem(STORAGE_KEYS.USERS, updated);
+        updateUser({ ...user, displayName: trimmed });
       } catch {
         throw new Error('Something went wrong. Please try again.');
       }
@@ -212,17 +204,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const updateAvatar = useCallback(
     async (emoji: string) => {
-      let users: User[] | null;
+      if (!user) throw new Error('Not logged in.');
       try {
-        users = await getItem<User[]>(STORAGE_KEYS.USERS);
-      } catch {
-        throw new Error('Something went wrong. Please try again.');
-      }
-      const updated = (users ?? []).map((u) =>
-        u.id === user?.id ? { ...u, avatar: emoji } : u,
-      );
-      try {
-        await setItem(STORAGE_KEYS.USERS, updated);
+        updateUser({ ...user, avatar: emoji });
       } catch {
         throw new Error('Something went wrong. Please try again.');
       }

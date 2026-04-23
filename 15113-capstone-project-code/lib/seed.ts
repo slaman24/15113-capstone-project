@@ -1,10 +1,9 @@
 import { hashPassword } from './hash';
-import { getItem, setItem, STORAGE_KEYS } from './storage';
-import type { User, Order } from './types';
+import { createOrder, createUser, getMeta, setMeta } from './database';
+import type { Order, User } from './types';
 
 export async function seedIfNeeded(): Promise<void> {
-  const seeded = await getItem<boolean>(STORAGE_KEYS.SEEDED);
-  if (seeded) return;
+  if (getMeta('seeded') === '1') return;
 
   const [hash1, hash2, hash3, hash4] = await Promise.all([
     hashPassword('laundry123'),
@@ -14,6 +13,8 @@ export async function seedIfNeeded(): Promise<void> {
   ]);
 
   const now = new Date().toISOString();
+  const tomorrow = new Date(Date.now() + 86_400_000).toISOString();
+  const yesterday = new Date(Date.now() - 86_400_000).toISOString();
 
   const users: User[] = [
     {
@@ -63,9 +64,12 @@ export async function seedIfNeeded(): Promise<void> {
         { label: 'Shirts', quantity: 3 },
         { label: 'Pants', quantity: 2 },
       ],
-      pickupTime: 'Tomorrow 10am',
+      pickupDateTime: tomorrow,
+      pickupLocation: 'Room 204, Forbes Hall',
+      waterTemp: 'cold',
       notes: '',
       status: 'pending',
+      statusTimestamps: { pending: now },
       createdAt: now,
       updatedAt: now,
     },
@@ -77,10 +81,13 @@ export async function seedIfNeeded(): Promise<void> {
         { label: 'Socks', quantity: 5 },
         { label: 'Towels', quantity: 1 },
       ],
-      pickupTime: 'Today 3pm',
+      pickupDateTime: tomorrow,
+      pickupLocation: 'Lobby, Morewood Gardens',
+      waterTemp: 'warm',
       notes: '',
       status: 'accepted',
-      createdAt: now,
+      statusTimestamps: { pending: yesterday, accepted: now },
+      createdAt: yesterday,
       updatedAt: now,
     },
     {
@@ -91,10 +98,13 @@ export async function seedIfNeeded(): Promise<void> {
         { label: 'Shirts', quantity: 2 },
         { label: 'Bedding', quantity: 1 },
       ],
-      pickupTime: 'Wed 9am',
-      notes: '',
-      status: 'in_progress',
-      createdAt: now,
+      pickupDateTime: tomorrow,
+      pickupLocation: 'Room 101, Mudge House',
+      waterTemp: 'hot',
+      notes: 'Please use fragrance-free detergent.',
+      status: 'washing',
+      statusTimestamps: { pending: yesterday, accepted: yesterday, picked_up: yesterday, washing: now },
+      createdAt: yesterday,
       updatedAt: now,
     },
     {
@@ -102,10 +112,13 @@ export async function seedIfNeeded(): Promise<void> {
       wearerId: 'seed-user-0002',
       washerId: 'seed-user-0003',
       items: [{ label: 'Pants', quantity: 4 }],
-      pickupTime: 'Last Friday',
+      pickupDateTime: yesterday,
+      pickupLocation: 'Room 310, Residence on Fifth',
+      waterTemp: 'cold',
       notes: '',
-      status: 'done',
-      createdAt: now,
+      status: 'dropped_off',
+      statusTimestamps: { pending: yesterday, accepted: yesterday, picked_up: yesterday, washing: yesterday, done: yesterday, dropped_off: now },
+      createdAt: yesterday,
       updatedAt: now,
     },
     {
@@ -113,15 +126,18 @@ export async function seedIfNeeded(): Promise<void> {
       wearerId: 'seed-user-0001',
       washerId: null,
       items: [{ label: 'Bedding', quantity: 1 }],
-      pickupTime: 'Mon 8am',
+      pickupDateTime: yesterday,
+      pickupLocation: 'Room 204, Forbes Hall',
+      waterTemp: 'warm',
       notes: '',
       status: 'cancelled',
-      createdAt: now,
-      updatedAt: now,
+      statusTimestamps: { pending: yesterday, cancelled: yesterday },
+      createdAt: yesterday,
+      updatedAt: yesterday,
     },
   ];
 
-  await setItem(STORAGE_KEYS.USERS, users);
-  await setItem(STORAGE_KEYS.ORDERS, orders);
-  await setItem(STORAGE_KEYS.SEEDED, true);
+  for (const u of users) createUser(u);
+  for (const o of orders) createOrder(o);
+  setMeta('seeded', '1');
 }
