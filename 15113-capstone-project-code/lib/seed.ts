@@ -14,6 +14,7 @@ export async function seedIfNeeded(): Promise<void> {
 
   const now = new Date().toISOString();
   const tomorrow = new Date(Date.now() + 86_400_000).toISOString();
+  const dayAfterTomorrow = new Date(Date.now() + 2 * 86_400_000).toISOString();
   const yesterday = new Date(Date.now() - 86_400_000).toISOString();
 
   const users: User[] = [
@@ -66,6 +67,8 @@ export async function seedIfNeeded(): Promise<void> {
       ],
       pickupDateTime: tomorrow,
       pickupLocation: 'Room 204, Forbes Hall',
+      dropoffDateTime: dayAfterTomorrow,
+      dropoffLocation: 'Room 204, Forbes Hall',
       waterTemp: 'cold',
       notes: '',
       status: 'pending',
@@ -83,6 +86,8 @@ export async function seedIfNeeded(): Promise<void> {
       ],
       pickupDateTime: tomorrow,
       pickupLocation: 'Lobby, Morewood Gardens',
+      dropoffDateTime: dayAfterTomorrow,
+      dropoffLocation: 'Lobby, Morewood Gardens',
       waterTemp: 'warm',
       notes: '',
       status: 'accepted',
@@ -100,6 +105,8 @@ export async function seedIfNeeded(): Promise<void> {
       ],
       pickupDateTime: tomorrow,
       pickupLocation: 'Room 101, Mudge House',
+      dropoffDateTime: tomorrow,
+      dropoffLocation: 'Room 101, Mudge House',
       waterTemp: 'hot',
       notes: 'Please use fragrance-free detergent.',
       status: 'washing',
@@ -114,10 +121,12 @@ export async function seedIfNeeded(): Promise<void> {
       items: [{ label: 'Pants', quantity: 4 }],
       pickupDateTime: yesterday,
       pickupLocation: 'Room 310, Residence on Fifth',
+      dropoffDateTime: yesterday,
+      dropoffLocation: 'Room 310, Residence on Fifth',
       waterTemp: 'cold',
       notes: '',
       status: 'dropped_off',
-      statusTimestamps: { pending: yesterday, accepted: yesterday, picked_up: yesterday, washing: yesterday, done: yesterday, dropped_off: now },
+      statusTimestamps: { pending: yesterday, accepted: yesterday, picked_up: yesterday, washing: yesterday, dropped_off: now },
       createdAt: yesterday,
       updatedAt: now,
     },
@@ -128,6 +137,8 @@ export async function seedIfNeeded(): Promise<void> {
       items: [{ label: 'Bedding', quantity: 1 }],
       pickupDateTime: yesterday,
       pickupLocation: 'Room 204, Forbes Hall',
+      dropoffDateTime: yesterday,
+      dropoffLocation: 'Room 204, Forbes Hall',
       waterTemp: 'warm',
       notes: '',
       status: 'cancelled',

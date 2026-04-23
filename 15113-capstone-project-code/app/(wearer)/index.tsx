@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -32,80 +32,179 @@ function generateId(): string {
   });
 }
 
-function formatDateTime(d: Date): string {
-  return d.toLocaleDateString(undefined, {
-    weekday: 'short', month: 'short', day: 'numeric',
-  }) + ' at ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+function formatDate(d: Date): string {
+  return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 }
+
+function formatTime(d: Date): string {
+  return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+}
+
+// ─── Checkbox ────────────────────────────────────────────────────────────────
+
+function Checkbox({
+  checked,
+  onToggle,
+  label,
+  disabled,
+}: {
+  checked: boolean;
+  onToggle: () => void;
+  label: string;
+  disabled?: boolean;
+}) {
+  return (
+    <TouchableOpacity
+      style={styles.checkRow}
+      onPress={onToggle}
+      activeOpacity={0.7}
+      disabled={disabled}
+    >
+      <View style={[styles.checkBox, checked && styles.checkBoxChecked]}>
+        {checked && <Text style={styles.checkMark}>✓</Text>}
+      </View>
+      <Text style={styles.checkLabel}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
+// ─── Component ──────────────────────────────────────────────────────────────
 
 export default function PlaceOrderScreen() {
   const { user } = useAuth();
 
   const [quantities, setQuantities] = useState<QuantityMap>({});
+
+  // ── Pickup ────────────────────────────────────────────────────────────────
   const [pickupDate, setPickupDate] = useState<Date>(() => {
     const d = new Date();
     d.setDate(d.getDate() + 1);
     d.setMinutes(0, 0, 0);
     return d;
   });
-  // Android needs two-step picker: first date, then time
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [pickerMode, setPickerMode] = useState<'date' | 'time'>('date');
+  const [showPickupDatePicker, setShowPickupDatePicker] = useState(false);
+  const [showPickupTimePicker, setShowPickupTimePicker] = useState(false);
   const [pickupLocation, setPickupLocation] = useState('');
+
+  // ── Dropoff ───────────────────────────────────────────────────────────────
+  const [dropoffDate, setDropoffDate] = useState<Date>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 2);
+    d.setMinutes(0, 0, 0);
+    return d;
+  });
+  const [showDropoffDatePicker, setShowDropoffDatePicker] = useState(false);
+  const [showDropoffTimePicker, setShowDropoffTimePicker] = useState(false);
+  const [samePickupDate, setSamePickupDate] = useState(false);
+  const [samePickupTime, setSamePickupTime] = useState(false);
+  const [dropoffLocation, setDropoffLocation] = useState('');
+  const [samePickupLocation, setSamePickupLocation] = useState(false);
+
   const [waterTemp, setWaterTemp] = useState<WaterTemp>('cold');
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [successId, setSuccessId] = useState<string | null>(null);
 
+  // ── Sync dropoff when "same as pickup" checkboxes are on ─────────────────
+
+  useEffect(() => {
+    if (samePickupDate) {
+      setDropoffDate((prev) => {
+        const d = new Date(prev);
+        d.setFullYear(pickupDate.getFullYear(), pickupDate.getMonth(), pickupDate.getDate());
+        return d;
+      });
+    }
+  }, [pickupDate, samePickupDate]);
+
+  useEffect(() => {
+    if (samePickupTime) {
+      setDropoffDate((prev) => {
+        const d = new Date(prev);
+        d.setHours(pickupDate.getHours(), pickupDate.getMinutes(), 0, 0);
+        return d;
+      });
+    }
+  }, [pickupDate, samePickupTime]);
+
+  useEffect(() => {
+    if (samePickupLocation) setDropoffLocation(pickupLocation);
+  }, [pickupLocation, samePickupLocation]);
+
   function adjust(label: string, delta: number) {
-    setQuantities((prev) => {
-      const next = (prev[label] ?? 0) + delta;
-      return { ...prev, [label]: Math.max(0, next) };
+    setQuantities((prev) => ({ ...prev, [label]: Math.max(0, (prev[label] ?? 0) + delta) }));
+  }
+
+  // ── Pickup picker handlers ────────────────────────────────────────────────
+
+  function onPickupDateChange(event: DateTimePickerEvent, selected?: Date) {
+    if (Platform.OS !== 'ios') setShowPickupDatePicker(false);
+    if (event.type === 'dismissed' || !selected) return;
+    setPickupDate((prev) => {
+      const d = new Date(prev);
+      d.setFullYear(selected.getFullYear(), selected.getMonth(), selected.getDate());
+      return d;
+    });
+  }
+
+  function onPickupTimeChange(event: DateTimePickerEvent, selected?: Date) {
+    if (Platform.OS !== 'ios') setShowPickupTimePicker(false);
+    if (event.type === 'dismissed' || !selected) return;
+    setPickupDate((prev) => {
+      const d = new Date(prev);
+      d.setHours(selected.getHours(), selected.getMinutes(), 0, 0);
+      return d;
+    });
+  }
+
+  // ── Dropoff picker handlers ───────────────────────────────────────────────
+
+  function onDropoffDateChange(event: DateTimePickerEvent, selected?: Date) {
+    if (Platform.OS !== 'ios') setShowDropoffDatePicker(false);
+    if (event.type === 'dismissed' || !selected) return;
+    setSamePickupDate(false);
+    setDropoffDate((prev) => {
+      const d = new Date(prev);
+      d.setFullYear(selected.getFullYear(), selected.getMonth(), selected.getDate());
+      return d;
+    });
+  }
+
+  function onDropoffTimeChange(event: DateTimePickerEvent, selected?: Date) {
+    if (Platform.OS !== 'ios') setShowDropoffTimePicker(false);
+    if (event.type === 'dismissed' || !selected) return;
+    setSamePickupTime(false);
+    setDropoffDate((prev) => {
+      const d = new Date(prev);
+      d.setHours(selected.getHours(), selected.getMinutes(), 0, 0);
+      return d;
     });
   }
 
   function reset() {
     setQuantities({});
-    const d = new Date();
-    d.setDate(d.getDate() + 1);
-    d.setMinutes(0, 0, 0);
-    setPickupDate(d);
+    const d1 = new Date();
+    d1.setDate(d1.getDate() + 1);
+    d1.setMinutes(0, 0, 0);
+    setPickupDate(d1);
+    const d2 = new Date();
+    d2.setDate(d2.getDate() + 2);
+    d2.setMinutes(0, 0, 0);
+    setDropoffDate(d2);
     setPickupLocation('');
+    setDropoffLocation('');
+    setSamePickupDate(false);
+    setSamePickupTime(false);
+    setSamePickupLocation(false);
     setWaterTemp('cold');
     setNotes('');
     setError('');
     setSuccessId(null);
-  }
-
-  function openPicker() {
-    setPickerMode('date');
-    setShowDatePicker(true);
-  }
-
-  function onDateChange(event: DateTimePickerEvent, selected?: Date) {
-    if (event.type === 'dismissed') {
-      setShowDatePicker(false);
-      return;
-    }
-    const d = selected ?? pickupDate;
-    if (Platform.OS === 'android') {
-      if (pickerMode === 'date') {
-        // Keep same time, update just date
-        const updated = new Date(pickupDate);
-        updated.setFullYear(d.getFullYear(), d.getMonth(), d.getDate());
-        setPickupDate(updated);
-        setPickerMode('time');
-        // Stay open for time selection
-      } else {
-        const updated = new Date(pickupDate);
-        updated.setHours(d.getHours(), d.getMinutes(), 0, 0);
-        setPickupDate(updated);
-        setShowDatePicker(false);
-      }
-    } else {
-      setPickupDate(d);
-    }
+    setShowPickupDatePicker(false);
+    setShowPickupTimePicker(false);
+    setShowDropoffDatePicker(false);
+    setShowDropoffTimePicker(false);
   }
 
   const selectedItems: LaundryItem[] = ITEM_LABELS.filter(
@@ -117,19 +216,11 @@ export default function PlaceOrderScreen() {
 
   async function handleSubmit() {
     setError('');
-
-    if (noItems) {
-      setError('Please add at least one item to your order.');
-      return;
-    }
-    if (!pickupLocation.trim()) {
-      setError('Please enter a pickup location.');
-      return;
-    }
-    if (notes.length > 200) {
-      setError('Notes must be 200 characters or fewer.');
-      return;
-    }
+    if (noItems) { setError('Please add at least one item.'); return; }
+    if (!pickupLocation.trim()) { setError('Please enter a pickup location.'); return; }
+    if (!dropoffLocation.trim()) { setError('Please enter a drop-off location.'); return; }
+    if (dropoffDate < pickupDate) { setError('Drop-off must be after pickup.'); return; }
+    if (notes.length > 200) { setError('Notes must be 200 characters or fewer.'); return; }
 
     setLoading(true);
     try {
@@ -141,6 +232,8 @@ export default function PlaceOrderScreen() {
         items: selectedItems,
         pickupDateTime: pickupDate.toISOString(),
         pickupLocation: pickupLocation.trim(),
+        dropoffDateTime: dropoffDate.toISOString(),
+        dropoffLocation: dropoffLocation.trim(),
         waterTemp,
         notes: notes.trim(),
         status: 'pending',
@@ -149,9 +242,9 @@ export default function PlaceOrderScreen() {
         updatedAt: now,
       };
       createOrder(newOrder);
-      setSuccessId(newOrder.id);
+      const id = newOrder.id;
       reset();
-      setSuccessId(newOrder.id); // restore after reset clears it
+      setSuccessId(id);
     } catch {
       setError('Could not place your order. Please try again.');
     } finally {
@@ -169,16 +262,14 @@ export default function PlaceOrderScreen() {
 
         {successId && (
           <View style={styles.successBox}>
-            <Text style={styles.successText}>
-              Order placed! ID: …{successId.slice(-6)}
-            </Text>
+            <Text style={styles.successText}>Order placed! ID: …{successId.slice(-6)}</Text>
             <TouchableOpacity onPress={() => setSuccessId(null)}>
               <Text style={styles.successLink}>Place another order</Text>
             </TouchableOpacity>
           </View>
         )}
 
-        {/* Item picker */}
+        {/* ── Items ──────────────────────────────────────────────────────── */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Items</Text>
           {ITEM_LABELS.map((label) => (
@@ -205,29 +296,54 @@ export default function PlaceOrderScreen() {
           ))}
         </View>
 
-        {/* Pickup date/time */}
+        {/* ── Pickup ─────────────────────────────────────────────────────── */}
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Pickup Date & Time</Text>
+          <Text style={styles.sectionLabel}>Pickup Date</Text>
           <TouchableOpacity
             style={styles.dateBtn}
-            onPress={openPicker}
+            onPress={() => {
+              setShowPickupDatePicker((v) => !v);
+              setShowPickupTimePicker(false);
+            }}
             disabled={loading}
             activeOpacity={0.8}
           >
-            <Text style={styles.dateBtnText}>📅  {formatDateTime(pickupDate)}</Text>
+            <Text style={styles.dateBtnText}>📅  {formatDate(pickupDate)}</Text>
           </TouchableOpacity>
-          {(showDatePicker) && (
+          {showPickupDatePicker && (
             <DateTimePicker
               value={pickupDate}
-              mode={pickerMode}
+              mode="date"
               display={Platform.OS === 'ios' ? 'inline' : 'default'}
               minimumDate={new Date()}
-              onChange={onDateChange}
+              onChange={onPickupDateChange}
             />
           )}
         </View>
 
-        {/* Pickup location */}
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>Pickup Time</Text>
+          <TouchableOpacity
+            style={styles.dateBtn}
+            onPress={() => {
+              setShowPickupTimePicker((v) => !v);
+              setShowPickupDatePicker(false);
+            }}
+            disabled={loading}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.dateBtnText}>🕐  {formatTime(pickupDate)}</Text>
+          </TouchableOpacity>
+          {showPickupTimePicker && (
+            <DateTimePicker
+              value={pickupDate}
+              mode="time"
+              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              onChange={onPickupTimeChange}
+            />
+          )}
+        </View>
+
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Pickup Location</Text>
           <TextInput
@@ -241,7 +357,114 @@ export default function PlaceOrderScreen() {
           />
         </View>
 
-        {/* Water temperature */}
+        {/* ── Drop-off ───────────────────────────────────────────────────── */}
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>Drop-off Date</Text>
+          <Checkbox
+            checked={samePickupDate}
+            onToggle={() => {
+              if (!samePickupDate) {
+                setDropoffDate((prev) => {
+                  const d = new Date(prev);
+                  d.setFullYear(
+                    pickupDate.getFullYear(),
+                    pickupDate.getMonth(),
+                    pickupDate.getDate(),
+                  );
+                  return d;
+                });
+              }
+              setSamePickupDate((v) => !v);
+            }}
+            label="Same date as pickup"
+            disabled={loading}
+          />
+          <TouchableOpacity
+            style={[styles.dateBtn, { marginTop: 8 }]}
+            onPress={() => {
+              setShowDropoffDatePicker((v) => !v);
+              setShowDropoffTimePicker(false);
+            }}
+            disabled={loading}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.dateBtnText}>📅  {formatDate(dropoffDate)}</Text>
+          </TouchableOpacity>
+          {showDropoffDatePicker && (
+            <DateTimePicker
+              value={dropoffDate}
+              mode="date"
+              display={Platform.OS === 'ios' ? 'inline' : 'default'}
+              minimumDate={new Date()}
+              onChange={onDropoffDateChange}
+            />
+          )}
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>Drop-off Time</Text>
+          <Checkbox
+            checked={samePickupTime}
+            onToggle={() => {
+              if (!samePickupTime) {
+                setDropoffDate((prev) => {
+                  const d = new Date(prev);
+                  d.setHours(pickupDate.getHours(), pickupDate.getMinutes(), 0, 0);
+                  return d;
+                });
+              }
+              setSamePickupTime((v) => !v);
+            }}
+            label="Same time as pickup"
+            disabled={loading}
+          />
+          <TouchableOpacity
+            style={[styles.dateBtn, { marginTop: 8 }]}
+            onPress={() => {
+              setShowDropoffTimePicker((v) => !v);
+              setShowDropoffDatePicker(false);
+            }}
+            disabled={loading}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.dateBtnText}>🕐  {formatTime(dropoffDate)}</Text>
+          </TouchableOpacity>
+          {showDropoffTimePicker && (
+            <DateTimePicker
+              value={dropoffDate}
+              mode="time"
+              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              onChange={onDropoffTimeChange}
+            />
+          )}
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>Drop-off Location</Text>
+          <Checkbox
+            checked={samePickupLocation}
+            onToggle={() => {
+              if (!samePickupLocation) setDropoffLocation(pickupLocation);
+              setSamePickupLocation((v) => !v);
+            }}
+            label="Same location as pickup"
+            disabled={loading}
+          />
+          <TextInput
+            style={[styles.input, { marginTop: 8 }]}
+            placeholder='e.g. "Room 204, Forbes Hall"'
+            placeholderTextColor={drip.mutedText}
+            value={dropoffLocation}
+            onChangeText={(text) => {
+              if (samePickupLocation) setSamePickupLocation(false);
+              setDropoffLocation(text);
+            }}
+            editable={!loading}
+            returnKeyType="done"
+          />
+        </View>
+
+        {/* ── Water temperature ──────────────────────────────────────────── */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Water Temperature</Text>
           <View style={styles.chipRow}>
@@ -261,7 +484,7 @@ export default function PlaceOrderScreen() {
           </View>
         </View>
 
-        {/* Notes */}
+        {/* ── Notes ──────────────────────────────────────────────────────── */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Notes (optional)</Text>
           <TextInput
@@ -298,18 +521,8 @@ export default function PlaceOrderScreen() {
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: drip.white },
   container: { flexGrow: 1, padding: 20, backgroundColor: drip.white },
-  heading: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: drip.darkTeal,
-    marginBottom: 20,
-  },
-  successBox: {
-    backgroundColor: '#D1FAE5',
-    borderRadius: 10,
-    padding: 16,
-    marginBottom: 20,
-  },
+  heading: { fontSize: 22, fontWeight: '700', color: drip.darkTeal, marginBottom: 20 },
+  successBox: { backgroundColor: '#D1FAE5', borderRadius: 10, padding: 16, marginBottom: 20 },
   successText: { color: drip.success, fontWeight: '600', fontSize: 15 },
   successLink: {
     color: drip.darkTeal,
@@ -318,12 +531,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   section: { marginBottom: 20 },
-  sectionLabel: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: drip.darkText,
-    marginBottom: 8,
-  },
+  sectionLabel: { fontSize: 15, fontWeight: '600', color: drip.darkText, marginBottom: 8 },
   itemRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -343,7 +551,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   counterBtnText: { fontSize: 20, color: drip.darkTeal, lineHeight: 22 },
-  counterValue: { fontSize: 16, fontWeight: '600', color: drip.darkText, minWidth: 20, textAlign: 'center' },
+  counterValue: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: drip.darkText,
+    minWidth: 20,
+    textAlign: 'center',
+  },
   dateBtn: {
     borderWidth: 1.5,
     borderColor: drip.lightAqua,
@@ -352,6 +566,21 @@ const styles = StyleSheet.create({
     backgroundColor: '#F9FAFB',
   },
   dateBtnText: { fontSize: 15, color: drip.darkText },
+  checkRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  checkBox: {
+    width: 22,
+    height: 22,
+    borderRadius: 5,
+    borderWidth: 2,
+    borderColor: drip.lightAqua,
+    backgroundColor: drip.white,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  checkBoxChecked: { backgroundColor: drip.teal, borderColor: drip.teal },
+  checkMark: { color: drip.white, fontSize: 13, fontWeight: '700' },
+  checkLabel: { fontSize: 14, color: drip.darkText },
   chipRow: { flexDirection: 'row', gap: 10 },
   chip: {
     flex: 1,

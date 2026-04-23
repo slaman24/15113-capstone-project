@@ -17,6 +17,7 @@ export interface Review {
   washerId: string;
   rating: number;
   text: string;
+  reviewerRole: 'wearer' | 'washer';
   createdAt: string;
 }
 
@@ -25,7 +26,6 @@ export type OrderStatus =
   | 'accepted'
   | 'picked_up'
   | 'washing'
-  | 'done'
   | 'dropped_off'
   | 'cancelled';
 
@@ -43,6 +43,8 @@ export interface Order {
   items: LaundryItem[];
   pickupDateTime: string;
   pickupLocation: string;
+  dropoffDateTime: string;
+  dropoffLocation: string;
   waterTemp: WaterTemp;
   notes: string;
   status: OrderStatus;

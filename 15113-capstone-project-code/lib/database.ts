@@ -5,10 +5,33 @@ import type { Order, OrderStatus, Review, Role, User, WaterTemp } from './types'
 
 const db = SQLite.openDatabaseSync('drip.db');
 
+// ─── Migrations ──────────────────────────────────────────────────────────────
+
+function runMigrations(): void {
+  const version = parseInt(getMeta('schema_version') ?? '0', 10);
+  if (version < 2) {
+    try { db.execSync(`ALTER TABLE orders ADD COLUMN dropoffDateTime TEXT NOT NULL DEFAULT '';`); } catch {}
+    try { db.execSync(`ALTER TABLE orders ADD COLUMN dropoffLocation TEXT NOT NULL DEFAULT '';`); } catch {}
+    try { db.execSync(`UPDATE orders SET status = 'dropped_off' WHERE status = 'done';`); } catch {}
+    db.execSync(`DROP TABLE IF EXISTS reviews;`);
+    setMeta('schema_version', '2');
+  }
+}
+
 // ─── Schema ──────────────────────────────────────────────────────────────────
 
 export function initDatabase(): void {
   db.execSync(`PRAGMA journal_mode = WAL;`);
+
+  // app_meta must exist before runMigrations reads schema_version
+  db.execSync(`
+    CREATE TABLE IF NOT EXISTS app_meta (
+      key TEXT PRIMARY KEY NOT NULL,
+      value TEXT NOT NULL
+    );
+  `);
+
+  runMigrations();
 
   db.execSync(`
     CREATE TABLE IF NOT EXISTS users (
@@ -30,6 +53,8 @@ export function initDatabase(): void {
       items TEXT NOT NULL,
       pickupDateTime TEXT NOT NULL,
       pickupLocation TEXT NOT NULL,
+      dropoffDateTime TEXT NOT NULL DEFAULT '',
+      dropoffLocation TEXT NOT NULL DEFAULT '',
       waterTemp TEXT NOT NULL DEFAULT 'cold',
       notes TEXT NOT NULL DEFAULT '',
       status TEXT NOT NULL,
@@ -42,19 +67,14 @@ export function initDatabase(): void {
   db.execSync(`
     CREATE TABLE IF NOT EXISTS reviews (
       id TEXT PRIMARY KEY NOT NULL,
-      orderId TEXT NOT NULL UNIQUE,
+      orderId TEXT NOT NULL,
       wearerId TEXT NOT NULL,
       washerId TEXT NOT NULL,
       rating INTEGER NOT NULL,
       text TEXT NOT NULL DEFAULT '',
-      createdAt TEXT NOT NULL
-    );
-  `);
-
-  db.execSync(`
-    CREATE TABLE IF NOT EXISTS app_meta (
-      key TEXT PRIMARY KEY NOT NULL,
-      value TEXT NOT NULL
+      reviewerRole TEXT NOT NULL DEFAULT 'wearer',
+      createdAt TEXT NOT NULL,
+      UNIQUE(orderId, reviewerRole)
     );
   `);
 }
@@ -103,6 +123,8 @@ interface OrderRow {
   items: string;
   pickupDateTime: string;
   pickupLocation: string;
+  dropoffDateTime: string;
+  dropoffLocation: string;
   waterTemp: string;
   notes: string;
   status: string;
@@ -118,6 +140,7 @@ interface ReviewRow {
   washerId: string;
   rating: number;
   text: string;
+  reviewerRole: string;
   createdAt: string;
 }
 
@@ -141,6 +164,8 @@ function rowToOrder(row: OrderRow): Order {
     items: JSON.parse(row.items),
     pickupDateTime: row.pickupDateTime,
     pickupLocation: row.pickupLocation,
+    dropoffDateTime: row.dropoffDateTime ?? '',
+    dropoffLocation: row.dropoffLocation ?? '',
     waterTemp: row.waterTemp as WaterTemp,
     notes: row.notes,
     status: row.status as OrderStatus,
@@ -158,6 +183,7 @@ function rowToReview(row: ReviewRow): Review {
     washerId: row.washerId,
     rating: row.rating,
     text: row.text,
+    reviewerRole: (row.reviewerRole as 'wearer' | 'washer') ?? 'wearer',
     createdAt: row.createdAt,
   };
 }
@@ -249,8 +275,11 @@ export function getPendingOrders(): Order[] {
 
 export function createOrder(order: Order): void {
   db.runSync(
-    `INSERT INTO orders (id, wearerId, washerId, items, pickupDateTime, pickupLocation, waterTemp, notes, status, statusTimestamps, createdAt, updatedAt)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO orders
+       (id, wearerId, washerId, items, pickupDateTime, pickupLocation,
+        dropoffDateTime, dropoffLocation, waterTemp, notes, status,
+        statusTimestamps, createdAt, updatedAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       order.id,
       order.wearerId,
@@ -258,6 +287,8 @@ export function createOrder(order: Order): void {
       JSON.stringify(order.items),
       order.pickupDateTime,
       order.pickupLocation,
+      order.dropoffDateTime,
+      order.dropoffLocation,
       order.waterTemp,
       order.notes,
       order.status,
@@ -270,7 +301,10 @@ export function createOrder(order: Order): void {
 
 export function updateOrder(order: Order): void {
   db.runSync(
-    `UPDATE orders SET wearerId = ?, washerId = ?, items = ?, pickupDateTime = ?, pickupLocation = ?, waterTemp = ?, notes = ?, status = ?, statusTimestamps = ?, updatedAt = ?
+    `UPDATE orders
+     SET wearerId = ?, washerId = ?, items = ?, pickupDateTime = ?,
+         pickupLocation = ?, dropoffDateTime = ?, dropoffLocation = ?,
+         waterTemp = ?, notes = ?, status = ?, statusTimestamps = ?, updatedAt = ?
      WHERE id = ?`,
     [
       order.wearerId,
@@ -278,6 +312,8 @@ export function updateOrder(order: Order): void {
       JSON.stringify(order.items),
       order.pickupDateTime,
       order.pickupLocation,
+      order.dropoffDateTime,
+      order.dropoffLocation,
       order.waterTemp,
       order.notes,
       order.status,
@@ -297,24 +333,27 @@ export function getAllReviews(): Review[] {
 
 export function getReviewsByWasher(washerId: string): Review[] {
   const rows = db.getAllSync<ReviewRow>(
-    `SELECT * FROM reviews WHERE washerId = ? ORDER BY createdAt DESC`,
+    `SELECT * FROM reviews WHERE washerId = ? AND reviewerRole = 'wearer' ORDER BY createdAt DESC`,
     [washerId],
   );
   return rows.map(rowToReview);
 }
 
-export function getReviewByOrder(orderId: string): Review | null {
+export function getReviewByOrderAndRole(
+  orderId: string,
+  reviewerRole: 'wearer' | 'washer',
+): Review | null {
   const row = db.getFirstSync<ReviewRow>(
-    `SELECT * FROM reviews WHERE orderId = ?`,
-    [orderId],
+    `SELECT * FROM reviews WHERE orderId = ? AND reviewerRole = ?`,
+    [orderId, reviewerRole],
   );
   return row ? rowToReview(row) : null;
 }
 
 export function createReview(review: Review): void {
   db.runSync(
-    `INSERT INTO reviews (id, orderId, wearerId, washerId, rating, text, createdAt)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO reviews (id, orderId, wearerId, washerId, rating, text, reviewerRole, createdAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       review.id,
       review.orderId,
@@ -322,6 +361,7 @@ export function createReview(review: Review): void {
       review.washerId,
       review.rating,
       review.text,
+      review.reviewerRole,
       review.createdAt,
     ],
   );

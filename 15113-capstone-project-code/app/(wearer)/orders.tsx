@@ -16,7 +16,7 @@ import {
   createReview,
   getAllUsers,
   getOrdersByWearer,
-  getReviewByOrder,
+  getReviewByOrderAndRole,
   updateOrder,
 } from '@/lib/database';
 import type { Order, OrderStatus, Review } from '@/lib/types';
@@ -37,8 +37,7 @@ function statusColor(status: OrderStatus): string {
     case 'accepted':    return drip.teal;
     case 'picked_up':   return '#F59E0B';
     case 'washing':     return '#8B5CF6';
-    case 'done':        return drip.success;
-    case 'dropped_off': return drip.darkTeal;
+    case 'dropped_off': return drip.success;
     case 'cancelled':   return drip.error;
   }
 }
@@ -71,7 +70,6 @@ const PIPELINE_STEPS: Step[] = [
   { status: 'accepted',    label: 'Accepted' },
   { status: 'picked_up',   label: 'Picked Up' },
   { status: 'washing',     label: 'Washing' },
-  { status: 'done',        label: 'Done' },
   { status: 'dropped_off', label: 'Dropped Off' },
 ];
 
@@ -81,8 +79,7 @@ const STATUS_ORDER: Record<OrderStatus, number> = {
   accepted:     1,
   picked_up:    2,
   washing:      3,
-  done:         4,
-  dropped_off:  5,
+  dropped_off:  4,
 };
 
 function StatusTimeline({ order }: { order: Order }) {
@@ -181,7 +178,7 @@ export default function MyOrdersScreen() {
     setReviewText('');
     setReviewError('');
     if (selected?.id) {
-      setExistingReview(getReviewByOrder(selected.id));
+      setExistingReview(getReviewByOrderAndRole(selected.id, 'wearer'));
     } else {
       setExistingReview(null);
     }
@@ -199,6 +196,7 @@ export default function MyOrdersScreen() {
         washerId: selected.washerId,
         rating: reviewRating,
         text: reviewText.trim(),
+        reviewerRole: 'wearer',
         createdAt: new Date().toISOString(),
       };
       createReview(newReview);
@@ -315,6 +313,10 @@ export default function MyOrdersScreen() {
             <Text style={styles.modalDetail}>📍 {selected.pickupLocation}</Text>
             <Text style={styles.modalDetail}>{TEMP_LABEL[selected.waterTemp] ?? selected.waterTemp}</Text>
 
+            <Text style={styles.modalSection}>Drop-off</Text>
+            <Text style={styles.modalDetail}>📅 {selected.dropoffDateTime ? formatDateTime(selected.dropoffDateTime) : '—'}</Text>
+            <Text style={styles.modalDetail}>📍 {selected.dropoffLocation || '—'}</Text>
+
             {selected.notes ? (
               <>
                 <Text style={styles.modalSection}>Notes</Text>
@@ -356,6 +358,9 @@ export default function MyOrdersScreen() {
               ) : (
                 <View style={styles.reviewSection}>
                   <Text style={styles.modalSection}>Rate Your Washer</Text>
+                  <Text style={{ fontSize: 13, color: drip.mutedText, marginBottom: 10 }}>
+                    Consider: Were they on time for pickup and drop-off? Were clothes returned clean? Were they easy to work with?
+                  </Text>
                   <View style={styles.starRow}>
                     {[1, 2, 3, 4, 5].map((n) => (
                       <TouchableOpacity

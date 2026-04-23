@@ -78,6 +78,12 @@ export default function AvailableOrdersScreen() {
         <Text style={styles.cardText}>{itemsSummary(item)}</Text>
         <Text style={styles.cardMuted}>📅 {formatDateTime(item.pickupDateTime)}</Text>
         <Text style={styles.cardMuted}>📍 {item.pickupLocation}</Text>
+        {item.dropoffDateTime ? (
+          <Text style={styles.cardMuted}>🏠 Drop-off: {formatDateTime(item.dropoffDateTime)}</Text>
+        ) : null}
+        {item.dropoffLocation && item.dropoffLocation !== item.pickupLocation ? (
+          <Text style={styles.cardMuted}>📍 Drop-off: {item.dropoffLocation}</Text>
+        ) : null}
         <Text style={styles.cardMuted}>{TEMP_LABEL[item.waterTemp] ?? item.waterTemp}</Text>
         <TouchableOpacity
           style={[styles.acceptBtn, isAccepting && styles.btnDisabled]}
