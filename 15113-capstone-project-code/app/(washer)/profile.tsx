@@ -1,6 +1,5 @@
 import { useCallback, useState } from 'react';
 import {
-  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -11,8 +10,7 @@ import {
 import { useFocusEffect } from 'expo-router';
 import { useAuth } from '@/context/auth-context';
 import { drip } from '@/constants/theme';
-import { clearDatabase, getReviewsByWasher } from '@/lib/database';
-import { removeItem, STORAGE_KEYS } from '@/lib/storage';
+import { getReviewsByWasher } from '@/lib/database';
 import type { Review } from '@/lib/types';
 
 const EMOJI_OPTIONS = ['👕', '👗', '🧦', '🧤', '🎩', '🧴', '🧺', '✨', '🌊', '🌿', '⭐', '😊'];
@@ -53,25 +51,6 @@ export default function WasherProfileScreen() {
     } catch {
       // best effort
     }
-  }
-
-  function confirmReset() {
-    Alert.alert(
-      'Reset App Data',
-      'This will permanently delete all accounts, orders, and reviews. Are you sure?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Reset',
-          style: 'destructive',
-          onPress: async () => {
-            clearDatabase();
-            await removeItem(STORAGE_KEYS.SESSION);
-            await logout();
-          },
-        },
-      ],
-    );
   }
 
   return (
@@ -126,10 +105,6 @@ export default function WasherProfileScreen() {
         <Text style={styles.value}>Washer</Text>
       </View>
 
-      <TouchableOpacity style={styles.logoutBtn} onPress={logout} activeOpacity={0.8}>
-        <Text style={styles.logoutText}>Log Out</Text>
-      </TouchableOpacity>
-
       {/* Ratings received */}
       {(() => {
         const avg = reviews.length
@@ -166,8 +141,8 @@ export default function WasherProfileScreen() {
         );
       })()}
 
-      <TouchableOpacity style={styles.resetBtn} onPress={confirmReset} activeOpacity={0.8}>
-        <Text style={styles.resetText}>Reset App Data</Text>
+      <TouchableOpacity style={styles.logoutBtn} onPress={logout} activeOpacity={0.8}>
+        <Text style={styles.logoutText}>Log Out</Text>
       </TouchableOpacity>
     </ScrollView>
   );
@@ -284,18 +259,6 @@ const styles = StyleSheet.create({
     color: drip.white,
     fontSize: 17,
     fontWeight: '700',
-  },
-  resetBtn: {
-    borderWidth: 1.5,
-    borderColor: drip.mutedText,
-    borderRadius: 10,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  resetText: {
-    color: drip.mutedText,
-    fontSize: 15,
-    fontWeight: '600',
   },
   noReviews: { color: drip.mutedText, fontSize: 14, marginBottom: 8 },
   ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },

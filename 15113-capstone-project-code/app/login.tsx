@@ -46,6 +46,7 @@ export default function LoginScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <Image
+          key="drip-logo"
           source={require('@/assets/images/drip_logo.png')}
           style={styles.logo}
           resizeMode="contain"
