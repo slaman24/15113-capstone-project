@@ -10,7 +10,7 @@ Gemini:
 - That looks great but could you keep the same navy blue border around the letters (same color as the outline for the water drop and baseball cap)
 
 
-During implementation, I ran into some challenges and felt that my best option was to start over completely. Below are my prompts for the 5 agents (all GitHub Copilot using Claude Sonnet 4.6 model) that were used to create my final implementation:
+During implementation, I ran into some challenges and felt that my best option was to start over completely. Below are my prompts for the 5 different agents (all GitHub Copilot using Claude Sonnet 4.6 model) that were used to create my final implementation:
 
 Agent 1 (SPEC.md generation):
 - Hi there! For a capstone project, I would like to implement an app for the start-up Drip, a laundry service for college students that uses a peer-to-peer model. For the implementation, I would like to prioritize SIMPLICITY. One thing that is really important to include is that I want a local login system that prompts users for a username and password (or allows them to enter a new username and password). The passwords should not be easily discoverable. There should be two seperate interfaces for a Wearer (someone who wants their laundry done) and a Washer (someone who does the laundry). Accounts should have an associated role (Wearer or Washer) so the app knows what interface to display. To be able to demo the app, I will need some mock data. Could you please generate a SPEC.md file outlining the implementation for the Drip app? In SPEC.md, please outline required features, error handling, and acceptance criteria. I would also like drip_logo.png (located in the docs directory) to be incorporated into the app design
