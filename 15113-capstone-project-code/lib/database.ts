@@ -16,6 +16,10 @@ function runMigrations(): void {
     db.execSync(`DROP TABLE IF EXISTS reviews;`);
     setMeta('schema_version', '2');
   }
+  if (version < 3) {
+    try { db.execSync(`ALTER TABLE orders ADD COLUMN price REAL NOT NULL DEFAULT 0;`); } catch {}
+    setMeta('schema_version', '3');
+  }
 }
 
 // ─── Schema ──────────────────────────────────────────────────────────────────
@@ -57,6 +61,7 @@ export function initDatabase(): void {
       dropoffLocation TEXT NOT NULL DEFAULT '',
       waterTemp TEXT NOT NULL DEFAULT 'cold',
       notes TEXT NOT NULL DEFAULT '',
+      price REAL NOT NULL DEFAULT 0,
       status TEXT NOT NULL,
       statusTimestamps TEXT NOT NULL DEFAULT '{}',
       createdAt TEXT NOT NULL,
@@ -127,6 +132,7 @@ interface OrderRow {
   dropoffLocation: string;
   waterTemp: string;
   notes: string;
+  price: number;
   status: string;
   statusTimestamps: string;
   createdAt: string;
@@ -168,6 +174,7 @@ function rowToOrder(row: OrderRow): Order {
     dropoffLocation: row.dropoffLocation ?? '',
     waterTemp: row.waterTemp as WaterTemp,
     notes: row.notes,
+    price: row.price ?? 0,
     status: row.status as OrderStatus,
     statusTimestamps: JSON.parse(row.statusTimestamps),
     createdAt: row.createdAt,
@@ -277,9 +284,9 @@ export function createOrder(order: Order): void {
   db.runSync(
     `INSERT INTO orders
        (id, wearerId, washerId, items, pickupDateTime, pickupLocation,
-        dropoffDateTime, dropoffLocation, waterTemp, notes, status,
+        dropoffDateTime, dropoffLocation, waterTemp, notes, price, status,
         statusTimestamps, createdAt, updatedAt)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       order.id,
       order.wearerId,
@@ -291,6 +298,7 @@ export function createOrder(order: Order): void {
       order.dropoffLocation,
       order.waterTemp,
       order.notes,
+      order.price,
       order.status,
       JSON.stringify(order.statusTimestamps),
       order.createdAt,
@@ -304,7 +312,7 @@ export function updateOrder(order: Order): void {
     `UPDATE orders
      SET wearerId = ?, washerId = ?, items = ?, pickupDateTime = ?,
          pickupLocation = ?, dropoffDateTime = ?, dropoffLocation = ?,
-         waterTemp = ?, notes = ?, status = ?, statusTimestamps = ?, updatedAt = ?
+         waterTemp = ?, notes = ?, price = ?, status = ?, statusTimestamps = ?, updatedAt = ?
      WHERE id = ?`,
     [
       order.wearerId,
@@ -316,6 +324,7 @@ export function updateOrder(order: Order): void {
       order.dropoffLocation,
       order.waterTemp,
       order.notes,
+      order.price,
       order.status,
       JSON.stringify(order.statusTimestamps),
       order.updatedAt,
@@ -335,6 +344,14 @@ export function getReviewsByWasher(washerId: string): Review[] {
   const rows = db.getAllSync<ReviewRow>(
     `SELECT * FROM reviews WHERE washerId = ? AND reviewerRole = 'wearer' ORDER BY createdAt DESC`,
     [washerId],
+  );
+  return rows.map(rowToReview);
+}
+
+export function getReviewsByWearer(wearerId: string): Review[] {
+  const rows = db.getAllSync<ReviewRow>(
+    `SELECT * FROM reviews WHERE wearerId = ? AND reviewerRole = 'washer' ORDER BY createdAt DESC`,
+    [wearerId],
   );
   return rows.map(rowToReview);
 }

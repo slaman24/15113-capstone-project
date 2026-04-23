@@ -40,6 +40,19 @@ function formatTime(d: Date): string {
   return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 }
 
+function calculatePrice(
+  items: LaundryItem[],
+  pickupDate: Date,
+  dropoffDate: Date,
+): { totalQty: number; base: number; isSpeed: boolean; speedSurcharge: number; total: number } {
+  const totalQty = items.reduce((sum, i) => sum + i.quantity, 0);
+  const base = totalQty === 0 ? 0 : Math.max(5, totalQty * 2);
+  const diffMs = dropoffDate.getTime() - pickupDate.getTime();
+  const isSpeed = diffMs >= 0 && diffMs < 12 * 60 * 60 * 1000;
+  const speedSurcharge = isSpeed ? 10 : 0;
+  return { totalQty, base, isSpeed, speedSurcharge, total: base + speedSurcharge };
+}
+
 // ─── Checkbox ────────────────────────────────────────────────────────────────
 
 function Checkbox({
@@ -213,6 +226,7 @@ export default function PlaceOrderScreen() {
 
   const noItems = selectedItems.length === 0;
   const isDisabled = loading || noItems;
+  const priceCalc = calculatePrice(selectedItems, pickupDate, dropoffDate);
 
   async function handleSubmit() {
     setError('');
@@ -236,6 +250,7 @@ export default function PlaceOrderScreen() {
         dropoffLocation: dropoffLocation.trim(),
         waterTemp,
         notes: notes.trim(),
+        price: priceCalc.total,
         status: 'pending',
         statusTimestamps: { pending: now },
         createdAt: now,
@@ -503,6 +518,30 @@ export default function PlaceOrderScreen() {
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
+        {/* ── Estimated Price ──────────────────────────────────────────── */}
+        {!noItems && (
+          <View style={styles.priceBox}>
+            <Text style={styles.priceSectionLabel}>Estimated Price</Text>
+            <View style={styles.priceRow}>
+              <Text style={styles.priceLabel}>
+                Base ({priceCalc.totalQty} item{priceCalc.totalQty !== 1 ? 's' : ''} × $2.00
+                {priceCalc.totalQty < 3 ? ', min $5.00' : ''})
+              </Text>
+              <Text style={styles.priceValue}>${priceCalc.base.toFixed(2)}</Text>
+            </View>
+            {priceCalc.isSpeed && (
+              <View style={styles.priceRow}>
+                <Text style={styles.priceLabel}>⚡ Speed order (under 12 hrs)</Text>
+                <Text style={styles.priceValue}>+$10.00</Text>
+              </View>
+            )}
+            <View style={[styles.priceRow, styles.priceTotalRow]}>
+              <Text style={styles.priceTotalLabel}>You owe your Washer</Text>
+              <Text style={styles.priceTotalValue}>${priceCalc.total.toFixed(2)}</Text>
+            </View>
+          </View>
+        )}
+
         <TouchableOpacity
           style={[styles.button, isDisabled && styles.buttonDisabled]}
           onPress={handleSubmit}
@@ -606,6 +645,37 @@ const styles = StyleSheet.create({
   textArea: { minHeight: 90, textAlignVertical: 'top' },
   charCount: { alignSelf: 'flex-end', color: drip.mutedText, fontSize: 12, marginTop: 4 },
   error: { color: drip.error, fontSize: 14, marginBottom: 12 },
+  priceBox: {
+    borderWidth: 1.5,
+    borderColor: drip.teal,
+    borderRadius: 12,
+    padding: 14,
+    backgroundColor: '#F0FDFF',
+    marginBottom: 16,
+  },
+  priceSectionLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: drip.darkTeal,
+    textTransform: 'uppercase',
+    marginBottom: 10,
+  },
+  priceRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  priceLabel: { fontSize: 14, color: drip.darkText, flex: 1, marginRight: 8 },
+  priceValue: { fontSize: 14, color: drip.darkText, fontWeight: '500' },
+  priceTotalRow: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: drip.lightAqua,
+    paddingTop: 8,
+    marginTop: 4,
+  },
+  priceTotalLabel: { fontSize: 15, fontWeight: '700', color: drip.darkTeal, flex: 1 },
+  priceTotalValue: { fontSize: 16, fontWeight: '700', color: drip.darkTeal },
   button: {
     backgroundColor: drip.teal,
     borderRadius: 10,

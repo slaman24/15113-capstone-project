@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   FlatList,
   Modal,
@@ -155,6 +155,13 @@ export default function MyOrdersScreen() {
   const [reviewError, setReviewError] = useState('');
   const [existingReview, setExistingReview] = useState<Review | null>(null);
 
+  // Rating prompt pop-up
+  const seenPromptRef = useRef(new Set<string>());
+  const [promptOrder, setPromptOrder] = useState<Order | null>(null);
+  const [promptRating, setPromptRating] = useState(0);
+  const [promptText, setPromptText] = useState('');
+  const [promptSaving, setPromptSaving] = useState(false);
+
   useFocusEffect(
     useCallback(() => {
       loadOrders();
@@ -171,6 +178,19 @@ export default function MyOrdersScreen() {
       names[u.id] = u.displayName;
     });
     setWasherNames(names);
+    // Check for unreviewed dropped_off orders to prompt
+    const toPrompt = mine.find(
+      (o) =>
+        o.status === 'dropped_off' &&
+        o.washerId &&
+        !seenPromptRef.current.has(o.id) &&
+        getReviewByOrderAndRole(o.id, 'wearer') === null,
+    );
+    if (toPrompt) {
+      setPromptOrder(toPrompt);
+      setPromptRating(0);
+      setPromptText('');
+    }
   }
 
   useEffect(() => {
@@ -206,6 +226,34 @@ export default function MyOrdersScreen() {
     } finally {
       setReviewSaving(false);
     }
+  }
+
+  function handleSubmitPrompt() {
+    if (!promptOrder || promptRating === 0 || !user || !promptOrder.washerId) return;
+    setPromptSaving(true);
+    try {
+      const newReview: Review = {
+        id: generateId(),
+        orderId: promptOrder.id,
+        wearerId: user.id,
+        washerId: promptOrder.washerId,
+        rating: promptRating,
+        text: promptText.trim(),
+        reviewerRole: 'wearer',
+        createdAt: new Date().toISOString(),
+      };
+      createReview(newReview);
+    } finally {
+      setPromptSaving(false);
+      dismissPrompt();
+    }
+  }
+
+  function dismissPrompt() {
+    if (promptOrder) seenPromptRef.current.add(promptOrder.id);
+    setPromptOrder(null);
+    setPromptRating(0);
+    setPromptText('');
   }
 
   function handleCancel(order: Order) {
@@ -251,6 +299,9 @@ export default function MyOrdersScreen() {
         <Text style={styles.cardText}>{itemsSummary(item)}</Text>
         <Text style={styles.cardMuted}>📅 {formatDateTime(item.pickupDateTime)}</Text>
         <Text style={styles.cardMuted}>📍 {item.pickupLocation}</Text>
+        {item.price > 0 && (
+          <Text style={styles.cardPrice}>💰 ${item.price.toFixed(2)}</Text>
+        )}
         {item.status === 'pending' && (
           <TouchableOpacity
             style={styles.cancelBtn}
@@ -280,6 +331,62 @@ export default function MyOrdersScreen() {
           contentContainerStyle={styles.list}
         />
       )}
+
+      {/* Rating prompt pop-up */}
+      <Modal
+        visible={promptOrder !== null}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={dismissPrompt}
+      >
+        {promptOrder && (
+          <ScrollView contentContainerStyle={styles.promptModal}>
+            <Text style={styles.promptTitle}>🎉 Your laundry is back!</Text>
+            <Text style={styles.promptSubtitle}>
+              Your order was dropped off by{' '}
+              {washerNames[promptOrder.washerId!] ?? 'your washer'}. How did it go?
+            </Text>
+            <Text style={styles.promptBulletHead}>Consider:</Text>
+            <Text style={styles.promptBullet}>• Were the clothes returned clean and in good condition?</Text>
+            <Text style={styles.promptBullet}>• Was your washer on time for pickup and drop-off?</Text>
+            <Text style={styles.promptBullet}>• Were they easy and professional to work with?</Text>
+            <Text style={styles.promptBullet}>• Would you use them again?</Text>
+            <View style={styles.promptStarRow}>
+              {[1, 2, 3, 4, 5].map((n) => (
+                <TouchableOpacity key={n} onPress={() => setPromptRating(n)} disabled={promptSaving}>
+                  <Text style={styles.promptStar}>{n <= promptRating ? '★' : '☆'}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TextInput
+              style={styles.promptInput}
+              placeholder="Leave a comment (optional)"
+              placeholderTextColor={drip.mutedText}
+              value={promptText}
+              onChangeText={setPromptText}
+              multiline
+              maxLength={200}
+              editable={!promptSaving}
+            />
+            <TouchableOpacity
+              style={[
+                styles.promptSubmitBtn,
+                (promptSaving || promptRating === 0) && styles.btnDisabled,
+              ]}
+              onPress={handleSubmitPrompt}
+              disabled={promptSaving || promptRating === 0}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.promptSubmitText}>
+                {promptSaving ? 'Saving…' : 'Submit Review'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.promptSkipBtn} onPress={dismissPrompt} activeOpacity={0.8}>
+              <Text style={styles.promptSkipText}>Skip for Now</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        )}
+      </Modal>
 
       {/* Detail modal */}
       <Modal
@@ -433,6 +540,7 @@ const styles = StyleSheet.create({
   badgeText: { color: drip.white, fontSize: 12, fontWeight: '600' },
   cardText: { color: drip.darkText, fontSize: 14, marginBottom: 4 },
   cardMuted: { color: drip.mutedText, fontSize: 13, marginBottom: 2 },
+  cardPrice: { color: drip.success, fontWeight: '700', fontSize: 13, marginTop: 4 },
   cancelBtn: {
     marginTop: 12,
     borderWidth: 1.5,
@@ -494,6 +602,36 @@ const styles = StyleSheet.create({
   },
   btnDisabled: { opacity: 0.5 },
   reviewSubmitText: { color: drip.white, fontWeight: '700', fontSize: 14 },
+  // Prompt modal
+  promptModal: { padding: 28 },
+  promptTitle: { fontSize: 22, fontWeight: '700', color: drip.darkTeal, marginBottom: 8 },
+  promptSubtitle: { fontSize: 15, color: drip.darkText, marginBottom: 20 },
+  promptBulletHead: { fontSize: 14, fontWeight: '600', color: drip.mutedText, marginBottom: 8 },
+  promptBullet: { fontSize: 14, color: drip.darkText, marginBottom: 4, paddingLeft: 4 },
+  promptStarRow: { flexDirection: 'row', gap: 8, marginTop: 20, marginBottom: 16 },
+  promptStar: { fontSize: 36, color: drip.gold },
+  promptInput: {
+    borderWidth: 1.5,
+    borderColor: drip.lightAqua,
+    borderRadius: 10,
+    padding: 12,
+    fontSize: 14,
+    color: drip.darkText,
+    backgroundColor: '#F9FAFB',
+    minHeight: 72,
+    textAlignVertical: 'top',
+    marginBottom: 16,
+  },
+  promptSubmitBtn: {
+    backgroundColor: drip.teal,
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  promptSubmitText: { color: drip.white, fontWeight: '700', fontSize: 16 },
+  promptSkipBtn: { paddingVertical: 12, alignItems: 'center' },
+  promptSkipText: { color: drip.mutedText, fontSize: 14, textDecorationLine: 'underline' },
 });
 
 // ─── Timeline styles ─────────────────────────────────────────────────────────

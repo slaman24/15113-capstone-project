@@ -85,6 +85,13 @@ export default function AvailableOrdersScreen() {
           <Text style={styles.cardMuted}>📍 Drop-off: {item.dropoffLocation}</Text>
         ) : null}
         <Text style={styles.cardMuted}>{TEMP_LABEL[item.waterTemp] ?? item.waterTemp}</Text>
+        {item.price > 0 && (
+          <View style={styles.priceTag}>
+            <Text style={styles.priceText}>
+              💰 ${item.price.toFixed(2)}{item.dropoffDateTime && (new Date(item.dropoffDateTime).getTime() - new Date(item.pickupDateTime).getTime()) < 12 * 60 * 60 * 1000 ? '  ⚡ Speed' : ''}
+            </Text>
+          </View>
+        )}
         <TouchableOpacity
           style={[styles.acceptBtn, isAccepting && styles.btnDisabled]}
           onPress={() => handleAccept(item)}
@@ -151,4 +158,13 @@ const styles = StyleSheet.create({
   error: { color: drip.error, padding: 16, fontSize: 14 },
   empty: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   emptyText: { color: drip.mutedText, fontSize: 16 },
+  priceTag: {
+    marginTop: 8,
+    backgroundColor: '#ECFDF5',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    alignSelf: 'flex-start',
+  },
+  priceText: { fontSize: 14, fontWeight: '700', color: drip.success },
 });

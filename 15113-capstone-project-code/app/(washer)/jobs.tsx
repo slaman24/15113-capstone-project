@@ -63,6 +63,15 @@ function formatDateTime(iso: string): string {
 
 const TEMP_LABEL: Record<string, string> = { cold: '❄️ Cold', warm: '🌡️ Warm', hot: '🔥 Hot' };
 
+const STATUS_SORT: Record<OrderStatus, number> = {
+  accepted:    0,
+  picked_up:   1,
+  washing:     2,
+  dropped_off: 3,
+  cancelled:   4,
+  pending:     5,
+};
+
 // ─── Next-status map ─────────────────────────────────────────────────────────
 
 type ActionMap = { nextStatus: OrderStatus; label: string; color: string };
@@ -100,6 +109,7 @@ export default function MyJobsScreen() {
   function loadJobs() {
     if (!user) return;
     const mine = getOrdersByWasher(user.id);
+    mine.sort((a, b) => (STATUS_SORT[a.status] ?? 5) - (STATUS_SORT[b.status] ?? 5));
     setJobs(mine);
     const users: User[] = getAllUsers();
     const names: Record<string, string> = {};
@@ -185,6 +195,13 @@ export default function MyJobsScreen() {
           <Text style={styles.cardMuted}>📍 Drop-off: {item.dropoffLocation}</Text>
         ) : null}
         <Text style={styles.cardMuted}>{TEMP_LABEL[item.waterTemp] ?? item.waterTemp}</Text>
+        {item.price > 0 && (
+          <View style={styles.priceTag}>
+            <Text style={styles.priceText}>
+              💰 ${item.price.toFixed(2)}{item.dropoffDateTime && (new Date(item.dropoffDateTime).getTime() - new Date(item.pickupDateTime).getTime()) < 12 * 60 * 60 * 1000 ? '  ⚡ Speed' : ''}
+            </Text>
+          </View>
+        )}
 
         {action && (
           <TouchableOpacity
@@ -326,6 +343,15 @@ const styles = StyleSheet.create({
   error: { color: drip.error, padding: 16, fontSize: 14 },
   empty: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   emptyText: { color: drip.mutedText, fontSize: 16 },
+  priceTag: {
+    marginTop: 8,
+    backgroundColor: '#ECFDF5',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    alignSelf: 'flex-start',
+  },
+  priceText: { fontSize: 14, fontWeight: '700', color: drip.success },
   // Rating modal
   ratingModal: { padding: 28 },
   ratingTitle: { fontSize: 22, fontWeight: '700', color: drip.darkTeal, marginBottom: 8 },

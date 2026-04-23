@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   Alert,
   ScrollView,
@@ -8,10 +8,12 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useFocusEffect } from 'expo-router';
 import { useAuth } from '@/context/auth-context';
 import { drip } from '@/constants/theme';
-import { clearDatabase } from '@/lib/database';
+import { clearDatabase, getReviewsByWearer } from '@/lib/database';
 import { removeItem, STORAGE_KEYS } from '@/lib/storage';
+import type { Review } from '@/lib/types';
 
 const EMOJI_OPTIONS = ['👕', '👗', '🧦', '🧤', '🎩', '🧴', '🧺', '✨', '🌊', '🌿', '⭐', '😊'];
 
@@ -22,8 +24,13 @@ export default function WearerProfileScreen() {
   const [nameInput, setNameInput] = useState(user?.displayName ?? '');
   const [nameSaving, setNameSaving] = useState(false);
   const [nameError, setNameError] = useState('');
-  const [nameSaved, setNameSaved] = useState(false);
+  const [nameSaved, setNameSaved] = useState(false);  const [reviews, setReviews] = useState<Review[]>([]);
 
+  useFocusEffect(
+    useCallback(() => {
+      if (user) setReviews(getReviewsByWearer(user.id));
+    }, [user]),
+  );
   async function handleSaveName() {
     setNameError('');
     setNameSaved(false);
@@ -126,6 +133,42 @@ export default function WearerProfileScreen() {
       <TouchableOpacity style={styles.logoutBtn} onPress={logout} activeOpacity={0.8}>
         <Text style={styles.logoutText}>Log Out</Text>
       </TouchableOpacity>
+
+      {/* Ratings received */}
+      {(() => {
+        const avg = reviews.length
+          ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length
+          : 0;
+        return (
+          <>
+            <Text style={styles.sectionLabel}>My Rating</Text>
+            {reviews.length === 0 ? (
+              <Text style={styles.noReviews}>No reviews yet — complete an order to receive one!</Text>
+            ) : (
+              <>
+                <View style={styles.ratingRow}>
+                  <Text style={styles.avgRating}>{avg.toFixed(1)}</Text>
+                  <Text style={styles.avgStars}>
+                    {'★'.repeat(Math.round(avg))}{'☆'.repeat(5 - Math.round(avg))}
+                  </Text>
+                  <Text style={styles.reviewCount}>({reviews.length} review{reviews.length !== 1 ? 's' : ''})</Text>
+                </View>
+                {reviews.slice(0, 5).map((r) => (
+                  <View key={r.id} style={styles.reviewCard}>
+                    <Text style={styles.reviewStars}>
+                      {'★'.repeat(r.rating)}{'☆'.repeat(5 - r.rating)}
+                    </Text>
+                    {r.text ? <Text style={styles.reviewText}>{r.text}</Text> : null}
+                    <Text style={styles.reviewDate}>
+                      {new Date(r.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                    </Text>
+                  </View>
+                ))}
+              </>
+            )}
+          </>
+        );
+      })()}
 
       <TouchableOpacity style={styles.resetBtn} onPress={confirmReset} activeOpacity={0.8}>
         <Text style={styles.resetText}>Reset App Data</Text>
@@ -258,5 +301,21 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
   },
+  noReviews: { color: drip.mutedText, fontSize: 14, marginBottom: 8 },
+  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  avgRating: { fontSize: 28, fontWeight: '700', color: drip.darkTeal },
+  avgStars: { fontSize: 22, color: drip.gold },
+  reviewCount: { fontSize: 13, color: drip.mutedText },
+  reviewCard: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: drip.lightAqua,
+  },
+  reviewStars: { fontSize: 18, color: drip.gold, marginBottom: 4 },
+  reviewText: { fontSize: 14, color: drip.darkText, marginBottom: 4 },
+  reviewDate: { fontSize: 12, color: drip.mutedText },
 });
 

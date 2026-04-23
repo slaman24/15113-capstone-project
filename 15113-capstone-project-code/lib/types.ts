@@ -47,6 +47,7 @@ export interface Order {
   dropoffLocation: string;
   waterTemp: WaterTemp;
   notes: string;
+  price: number;
   status: OrderStatus;
   statusTimestamps: Partial<Record<OrderStatus, string>>;
   createdAt: string;
